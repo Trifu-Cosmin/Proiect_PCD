@@ -1,0 +1,42 @@
+openapi: 3.0.3
+
+info:
+  title: T17 Semantic Analysis API
+  version: 1.0.0
+  description: >
+    Aceasta specificatie descrie o interfata HTTP minimalista pentru analiza
+    unui fisier sursa C/C++. In implementarea actuala, aplicatia nu expune
+    un server web, insa acest fisier arata cum ar putea fi descrisa functionalitatea
+    de analiza printr-un API REST.
+
+paths:
+  /analyze:
+    post:
+      summary: Analizeaza un fisier sursa
+      description: >
+        Primeste calea unui fisier sursa si intoarce informatii simple
+        despre analiza acestuia.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filePath:
+                  type: string
+                  example: tests/sample.c
+      responses:
+        '200':
+          description: Analiza realizata cu succes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: string
+                  diagnostics:
+                    type: integer
+                  status:
+                    type: string
