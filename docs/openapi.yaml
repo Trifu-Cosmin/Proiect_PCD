@@ -3,40 +3,130 @@ openapi: 3.0.3
 info:
   title: T17 Semantic Analysis API
   version: 1.0.0
-  description: >
-    Aceasta specificatie descrie o interfata HTTP minimalista pentru analiza
-    unui fisier sursa C/C++. In implementarea actuala, aplicatia nu expune
-    un server web, insa acest fisier arata cum ar putea fi descrisa functionalitatea
-    de analiza printr-un API REST.
+  description: Specificatie OpenAPI pentru proiectul T17 - Analiza Semantica Cod Sursa.
+
+servers:
+  - url: http://localhost:8080
+    description: Server local pentru analiza codului sursa
 
 paths:
   /analyze:
     post:
       summary: Analizeaza un fisier sursa
-      description: >
-        Primeste calea unui fisier sursa si intoarce informatii simple
-        despre analiza acestuia.
+      description: Primeste un fisier sursa C/C++ si intoarce un raport de analiza.
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               type: object
               properties:
-                filePath:
+                sourceFile:
                   type: string
-                  example: tests/sample.c
+                  format: binary
       responses:
         '200':
           description: Analiza realizata cu succes
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/AnalysisResult'
+        '400':
+          description: Cerere invalida
+        '500':
+          description: Eroare interna la analiza
+
+  /admin/stats:
+    get:
+      summary: Returneaza statistici server
+      description: Intoarce informatii despre statusul serverului si fisierele analizate.
+      responses:
+        '200':
+          description: Statistici returnate cu succes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerStats'
+
+  /reports/{reportId}:
+    get:
+      summary: Returneaza un raport de analiza
+      description: Intoarce raportul generat pentru o analiza anterioara.
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: sample_report
+      responses:
+        '200':
+          description: Raport returnat cu succes
+          content:
+            text/plain:
+              schema:
+                type: string
+        '404':
+          description: Raportul nu a fost gasit
+
+  /health:
+    get:
+      summary: Verifica daca serverul ruleaza
+      responses:
+        '200':
+          description: Server functional
+          content:
+            application/json:
+              schema:
                 type: object
                 properties:
-                  file:
-                    type: string
-                  diagnostics:
-                    type: integer
                   status:
                     type: string
+                    example: running
+
+components:
+  schemas:
+    AnalysisResult:
+      type: object
+      properties:
+        project:
+          type: string
+          example: PCD T17 Semantic Analyzer
+        sourceFile:
+          type: string
+          example: sample.c
+        diagnosticsCount:
+          type: integer
+          example: 0
+        functionsCount:
+          type: integer
+          example: 3
+        variablesCount:
+          type: integer
+          example: 8
+        ifStatementsCount:
+          type: integer
+          example: 1
+        forLoopsCount:
+          type: integer
+          example: 1
+        whileLoopsCount:
+          type: integer
+          example: 0
+        diagnostics:
+          type: array
+          items:
+            type: string
+
+    ServerStats:
+      type: object
+      properties:
+        status:
+          type: string
+          example: running
+        analyzedFiles:
+          type: integer
+          example: 2
+        lastFile:
+          type: string
+          example: bad.c
