@@ -1,14 +1,15 @@
 /*
   Descriere:
-  Acest fisier reprezinta un exemplu de cod sursa invalid, folosit pentru a
-  demonstra faptul ca libclang poate detecta diagnostice si erori de parsare.
+  Acest fisier este folosit pentru testarea diagnosticelor libclang.
+  Codul este aproape valid, dar contine o variabila folosita neinitializata,
+  astfel incat libclang poate afisa warning-uri.
  */
 
 #include <stdio.h>
 
 int main(void)
 {
-    int x =
+    int x;
     printf("%d\n", x);
     return 0;
 }

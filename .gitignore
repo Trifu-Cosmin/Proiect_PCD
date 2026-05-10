@@ -1,0 +1,7 @@
+main
+analyzer
+server
+client
+admin_client
+uploads/
+*.o
