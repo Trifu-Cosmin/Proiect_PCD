@@ -1,0 +1,25 @@
+[2026-05-10 17:40:55] INFO Server started on 127.0.0.1:8080
+[2026-05-10 17:41:07] INFO Client connected
+[2026-05-10 17:41:07] INFO File uploaded: sample.c (580 bytes)
+[2026-05-10 17:41:08] INFO Report saved for file: sample.c
+[2026-05-10 17:41:08] INFO Analysis completed for file: sample.c
+[2026-05-10 17:41:08] INFO Client disconnected
+[2026-05-10 17:41:15] INFO Client connected
+[2026-05-10 17:41:15] INFO File uploaded: bad.c (302 bytes)
+[2026-05-10 17:41:15] INFO Report saved for file: bad.c
+[2026-05-10 17:41:15] INFO Analysis completed for file: bad.c
+[2026-05-10 17:41:15] INFO Client disconnected
+[2026-05-10 17:42:43] INFO Client connected
+[2026-05-10 17:42:43] INFO Admin requested STATS
+[2026-05-10 17:42:43] INFO Client disconnected
+[2026-05-10 17:42:44] INFO Client connected
+[2026-05-10 17:42:44] INFO Admin requested LOGS
+[2026-05-10 17:42:44] INFO Client disconnected
+[2026-05-10 17:42:45] INFO Client connected
+[2026-05-10 17:42:45] INFO Admin requested directory listing: uploads
+[2026-05-10 17:42:45] INFO Client disconnected
+[2026-05-10 17:42:46] INFO Client connected
+[2026-05-10 17:42:46] INFO Admin requested directory listing: reports
+[2026-05-10 17:42:46] INFO Client disconnected
+[2026-05-10 17:42:47] INFO Client connected
+[2026-05-10 17:42:47] INFO Client disconnected
