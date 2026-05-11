@@ -43,6 +43,25 @@ Serverul:
 4. trimite raportul rezultat inapoi clientului
 
 ---
+### 2.2 DOWNLOAD_REPORT
+
+Comanda este folosita pentru descarcarea unui raport generat de server.
+
+Format:
+
+```txt```
+DOWNLOAD_REPORT <report_name>
+
+Exemplu:
+DOWNLOAD_REPORT sample_report.txt
+
+Serverul cauta raportul in directorul reports/ si il trimite catre client.
+
+Raspuns server:
+FILE <filename> <size>
+<file_bytes>
+Clientul salveaza fisierul primit in directorul downloads/.
+Aceasta operatie permite transferul de fisiere si in sensul server -> client.
 
 ## 3. Comenzi client admin
 

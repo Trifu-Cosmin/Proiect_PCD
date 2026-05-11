@@ -1,7 +1,7 @@
 === Analysis Result ===
 Project: PCD T17 Semantic Analyzer
 Source file: uploads/sample.c
-Diagnostics count: 1
+Diagnostics count: 0
 Functions count: 3
 Variables count: 8
 If statements count: 1
@@ -9,6 +9,6 @@ For loops count: 1
 While loops count: 0
 
 === Diagnostics ===
-uploads/sample.c:39:2: warning: no newline at end of file [-Wnewline-eof]
+Nu exista diagnostice.
 
 Parse completed.

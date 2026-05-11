@@ -12,11 +12,13 @@
   - ruleaza analyzer-ul intr-un proces separat folosind fork, exec si pipe
   - trimite rezultatul analizei inapoi clientului
   - salveaza raportul generat in directorul reports/
+  - permite descarcarea rapoartelor prin DOWNLOAD_REPORT
   - scrie evenimente importante in logs/server.log
   - raspunde la comenzi admin: STATS, LOGS, LIST_UPLOADS, LIST_REPORTS
 
   Protocol simplificat:
     UPLOAD <filename> <size>
+    DOWNLOAD_REPORT <report_name>
     STATS
     LOGS
     LIST_UPLOADS
@@ -45,6 +47,7 @@
 #define MAX_FILENAME 256
 #define MAX_PATH 512
 #define MAX_RESULT 65536
+#define FILE_CHUNK 4096
 
 static unsigned analyzed_files = 0;
 static char last_file[MAX_FILENAME] = "none";
@@ -193,7 +196,6 @@ static int recv_line(int sockfd, char *buffer, size_t max_len)
 
 /*
   Intoarce doar numele fisierului dintr-o cale.
-  Exemplu: tests/sample.c -> sample.c
 */
 static const char *get_basename(const char *path)
 {
@@ -319,13 +321,6 @@ static int append_text(char *buffer, size_t buffer_size, size_t *used, const cha
 
 /*
   Ruleaza analyzer-ul intr-un proces separat.
-
-  Se folosesc:
-  - pipe pentru preluarea outputului
-  - fork pentru proces copil
-  - dup2 pentru redirectionarea stdout
-  - execl pentru rularea analyzer-ului
-  - waitpid pentru asteptarea copilului
 */
 static int run_analyzer(const char *filepath, char *result, size_t result_size)
 {
@@ -437,6 +432,67 @@ static int send_result_response(int client_fd, const char *text)
 }
 
 /*
+  Trimite un fisier catre client.
+  Format raspuns:
+    FILE <filename> <size>
+    <file_bytes>
+*/
+static int send_file_response(int client_fd, const char *filepath, const char *filename)
+{
+    FILE *file = fopen(filepath, "rb");
+    if (file == NULL)
+    {
+        return send_result_response(client_fd, "ERROR: report file not found\n");
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0)
+    {
+        fclose(file);
+        return send_result_response(client_fd, "ERROR: cannot read report file\n");
+    }
+
+    long file_size_long = ftell(file);
+    if (file_size_long < 0)
+    {
+        fclose(file);
+        return send_result_response(client_fd, "ERROR: cannot determine report size\n");
+    }
+
+    rewind(file);
+
+    size_t file_size = (size_t)file_size_long;
+
+    char header[MAX_LINE];
+    int written = snprintf(header, sizeof(header), "FILE %s %zu\n", filename, file_size);
+    if (written < 0 || (size_t)written >= sizeof(header))
+    {
+        fclose(file);
+        return send_result_response(client_fd, "ERROR: response header too long\n");
+    }
+
+    if (send_all(client_fd, header, strlen(header)) != 0)
+    {
+        fclose(file);
+        return -1;
+    }
+
+    char buffer[FILE_CHUNK];
+    size_t read_count = 0;
+
+    while ((read_count = fread(buffer, 1, sizeof(buffer), file)) > 0U)
+    {
+        if (send_all(client_fd, buffer, read_count) != 0)
+        {
+            fclose(file);
+            return -1;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+
+/*
   Raspunde la comanda STATS.
 */
 static int handle_stats(int client_fd)
@@ -531,6 +587,33 @@ static int handle_list_directory(int client_fd, const char *dirname, const char 
 
     log_message("INFO", "Admin requested directory listing: %s", dirname);
     return send_result_response(client_fd, response);
+}
+
+/*
+  Proceseaza comanda DOWNLOAD_REPORT.
+*/
+static int handle_download_report(int client_fd, const char *line)
+{
+    char report_name[MAX_FILENAME];
+
+    if (sscanf(line, "DOWNLOAD_REPORT %255s", report_name) != 1)
+    {
+        log_message("ERROR", "Invalid DOWNLOAD_REPORT command");
+        return send_result_response(client_fd, "ERROR: invalid DOWNLOAD_REPORT command\n");
+    }
+
+    const char *safe_name = get_basename(report_name);
+
+    char report_path[MAX_PATH];
+    int written = snprintf(report_path, sizeof(report_path), "reports/%s", safe_name);
+    if (written < 0 || (size_t)written >= sizeof(report_path))
+    {
+        log_message("ERROR", "Report name too long");
+        return send_result_response(client_fd, "ERROR: report name too long\n");
+    }
+
+    log_message("INFO", "Client requested report download: %s", safe_name);
+    return send_file_response(client_fd, report_path, safe_name);
 }
 
 /*
@@ -651,6 +734,10 @@ static void handle_client(int client_fd)
     if (strncmp(line, "UPLOAD ", 7) == 0)
     {
         (void)handle_upload(client_fd, line);
+    }
+    else if (strncmp(line, "DOWNLOAD_REPORT ", 16) == 0)
+    {
+        (void)handle_download_report(client_fd, line);
     }
     else if (strcmp(line, "STATS") == 0)
     {

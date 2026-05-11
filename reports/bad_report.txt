@@ -1,7 +1,7 @@
 === Analysis Result ===
 Project: PCD T17 Semantic Analyzer
 Source file: uploads/bad.c
-Diagnostics count: 2
+Diagnostics count: 1
 Functions count: 1
 Variables count: 4
 If statements count: 0
@@ -9,7 +9,6 @@ For loops count: 0
 While loops count: 0
 
 === Diagnostics ===
-uploads/bad.c:15:2: warning: no newline at end of file [-Wnewline-eof]
 uploads/bad.c:13:20: warning: variable 'x' is uninitialized when used here [-Wuninitialized]
 
 Parse completed.

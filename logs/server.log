@@ -23,3 +23,31 @@
 [2026-05-10 17:42:46] INFO Client disconnected
 [2026-05-10 17:42:47] INFO Client connected
 [2026-05-10 17:42:47] INFO Client disconnected
+[2026-05-11 15:35:04] INFO Server started on 127.0.0.1:8080
+[2026-05-11 15:35:18] INFO Client connected
+[2026-05-11 15:35:18] INFO File uploaded: sample.c (582 bytes)
+[2026-05-11 15:35:19] INFO Report saved for file: sample.c
+[2026-05-11 15:35:19] INFO Analysis completed for file: sample.c
+[2026-05-11 15:35:19] INFO Client disconnected
+[2026-05-11 15:35:19] INFO Client connected
+[2026-05-11 15:35:19] INFO File uploaded: bad.c (304 bytes)
+[2026-05-11 15:35:19] INFO Report saved for file: bad.c
+[2026-05-11 15:35:19] INFO Analysis completed for file: bad.c
+[2026-05-11 15:35:19] INFO Client disconnected
+[2026-05-11 15:38:40] INFO Server started on 127.0.0.1:8080
+[2026-05-11 15:38:49] INFO Client connected
+[2026-05-11 15:38:49] INFO File uploaded: sample.c (582 bytes)
+[2026-05-11 15:38:49] INFO Report saved for file: sample.c
+[2026-05-11 15:38:49] INFO Analysis completed for file: sample.c
+[2026-05-11 15:38:49] INFO Client disconnected
+[2026-05-11 15:38:49] INFO Client connected
+[2026-05-11 15:38:49] INFO File uploaded: bad.c (304 bytes)
+[2026-05-11 15:38:49] INFO Report saved for file: bad.c
+[2026-05-11 15:38:49] INFO Analysis completed for file: bad.c
+[2026-05-11 15:38:49] INFO Client disconnected
+[2026-05-11 15:38:49] INFO Client connected
+[2026-05-11 15:38:49] INFO Client requested report download: sample_report.txt
+[2026-05-11 15:38:49] INFO Client disconnected
+[2026-05-11 15:38:49] INFO Client connected
+[2026-05-11 15:38:49] INFO Client requested report download: bad_report.txt
+[2026-05-11 15:38:49] INFO Client disconnected

@@ -4,4 +4,7 @@ server
 client
 admin_client
 uploads/
+reports/
+logs/
+downloads/
 *.o
