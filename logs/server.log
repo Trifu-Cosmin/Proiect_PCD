@@ -51,3 +51,63 @@
 [2026-05-11 15:38:49] INFO Client connected
 [2026-05-11 15:38:49] INFO Client requested report download: bad_report.txt
 [2026-05-11 15:38:49] INFO Client disconnected
+[2026-05-11 16:10:31] INFO Server started on 127.0.0.1:8080
+[2026-05-11 16:10:41] INFO Client connected
+[2026-05-11 16:10:41] INFO Authentication successful for user: user1, role: user
+[2026-05-11 16:10:41] INFO File uploaded: sample.c (582 bytes)
+[2026-05-11 16:10:41] INFO Report saved for file: sample.c
+[2026-05-11 16:10:41] INFO Analysis completed for file: sample.c
+[2026-05-11 16:10:41] INFO Client disconnected
+[2026-05-11 16:10:48] INFO Client connected
+[2026-05-11 16:10:48] INFO Authentication successful for user: user1, role: user
+[2026-05-11 16:10:48] INFO Client requested report download: sample_report.txt
+[2026-05-11 16:10:48] INFO Client disconnected
+[2026-05-11 16:10:59] INFO Client connected
+[2026-05-11 16:10:59] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:10:59] INFO Admin requested STATS
+[2026-05-11 16:10:59] INFO Client disconnected
+[2026-05-11 16:11:00] INFO Client connected
+[2026-05-11 16:11:00] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:11:00] INFO Admin requested LOGS
+[2026-05-11 16:11:00] INFO Client disconnected
+[2026-05-11 16:11:10] INFO Client connected
+[2026-05-11 16:11:10] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:11:10] INFO Admin requested directory listing: uploads
+[2026-05-11 16:11:10] INFO Client disconnected
+[2026-05-11 16:11:12] INFO Client connected
+[2026-05-11 16:11:12] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:11:12] INFO Admin requested directory listing: reports
+[2026-05-11 16:11:12] INFO Client disconnected
+[2026-05-11 16:11:14] INFO Client connected
+[2026-05-11 16:11:14] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:11:14] INFO Client disconnected
+[2026-05-11 16:18:07] INFO Server started on 127.0.0.1:8080
+[2026-05-11 16:18:17] INFO Client connected
+[2026-05-11 16:18:17] INFO Authentication successful for user: user1, role: user
+[2026-05-11 16:18:17] INFO File uploaded: sample.c (582 bytes)
+[2026-05-11 16:18:18] INFO Report saved for file: sample.c
+[2026-05-11 16:18:18] INFO Analysis completed for file: sample.c
+[2026-05-11 16:18:18] INFO Client disconnected
+[2026-05-11 16:18:28] INFO Client connected
+[2026-05-11 16:18:28] INFO Authentication successful for user: user1, role: user
+[2026-05-11 16:18:28] INFO Client requested report download: sample_report.txt
+[2026-05-11 16:18:28] INFO Client disconnected
+[2026-05-11 16:18:37] INFO Client connected
+[2026-05-11 16:18:37] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:18:37] INFO Admin requested STATS
+[2026-05-11 16:18:37] INFO Client disconnected
+[2026-05-11 16:18:38] INFO Client connected
+[2026-05-11 16:18:38] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:18:38] INFO Admin requested LOGS
+[2026-05-11 16:18:38] INFO Client disconnected
+[2026-05-11 16:18:39] INFO Client connected
+[2026-05-11 16:18:39] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:18:39] INFO Admin requested directory listing: uploads
+[2026-05-11 16:18:39] INFO Client disconnected
+[2026-05-11 16:18:39] INFO Client connected
+[2026-05-11 16:18:39] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:18:39] INFO Admin requested directory listing: reports
+[2026-05-11 16:18:39] INFO Client disconnected
+[2026-05-11 16:18:40] INFO Client connected
+[2026-05-11 16:18:40] INFO Authentication successful for user: admin, role: admin
+[2026-05-11 16:18:40] INFO Client disconnected

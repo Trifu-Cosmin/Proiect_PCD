@@ -2,13 +2,13 @@
   Descriere:
   Acest fisier implementeaza clientul de administrare pentru proiectul T17.
 
-  Clientul admin se conecteaza la serverul TCP si poate trimite comenzi
-  administrative simple:
-  - STATS
-  - LOGS
-  - LIST_UPLOADS
-  - LIST_REPORTS
-  - QUIT
+  Clientul admin:
+  - se autentifica automat la server folosind admin/admin123
+  - poate cere statistici server
+  - poate afisa logurile serverului
+  - poate lista fisierele uploadate
+  - poate lista rapoartele generate
+  - poate trimite comanda QUIT
 
   Pentru simplitate, la fiecare comanda se deschide o conexiune noua catre server.
 */
@@ -17,12 +17,16 @@
 #include <netinet/in.h> // Pentru sockaddr_in
 #include <stdio.h>      // Pentru printf, fprintf, fgets, snprintf
 #include <stdlib.h>     // Pentru malloc, free
-#include <string.h>     // Pentru memset, strlen, strcmp, strcspn, sscanf
+#include <string.h>     // Pentru memset, strlen, strcmp, strcspn, sscanf, strncmp
 #include <sys/socket.h> // Pentru socket, connect, send, recv
 #include <unistd.h>     // Pentru close
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
+
+#define ADMIN_USERNAME "admin"
+#define ADMIN_PASSWORD "admin123"
+
 #define MAX_LINE 1024
 
 /*
@@ -138,14 +142,19 @@ static int connect_to_server(void)
 }
 
 /*
-  Primeste raspuns de tip RESULT de la server.
+  Primeste raspuns de tip RESULT de la server si il pune in buffer.
   Format:
     RESULT <size>
     <payload>
 */
-static int receive_result(int sockfd)
+static int receive_result_text(int sockfd, char *output, size_t output_size)
 {
     char line[MAX_LINE];
+
+    if (output_size == 0U)
+    {
+        return -1;
+    }
 
     if (recv_line(sockfd, line, sizeof(line)) <= 0)
     {
@@ -174,21 +183,96 @@ static int receive_result(int sockfd)
 
     result[result_size] = '\0';
 
-    printf("\n%s\n", result);
+    int written = snprintf(output, output_size, "%s", result);
 
     free(result);
+
+    if (written < 0 || (size_t)written >= output_size)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+  Primeste si afiseaza raspunsul primit de la server.
+*/
+static int receive_and_print_result(int sockfd)
+{
+    char response[65536];
+
+    if (receive_result_text(sockfd, response, sizeof(response)) != 0)
+    {
+        return -1;
+    }
+
+    printf("\n%s\n", response);
+    return 0;
+}
+
+/*
+  Trimite comanda LOGIN catre server.
+  Admin clientul se autentifica folosind admin/admin123.
+*/
+static int login_to_server(int sockfd)
+{
+    char command[MAX_LINE];
+
+    int written = snprintf(command,
+                           sizeof(command),
+                           "LOGIN %s %s\n",
+                           ADMIN_USERNAME,
+                           ADMIN_PASSWORD);
+
+    if (written < 0 || (size_t)written >= sizeof(command))
+    {
+        fprintf(stderr, "Comanda LOGIN este prea lunga.\n");
+        return -1;
+    }
+
+    if (send_all(sockfd, command, strlen(command)) != 0)
+    {
+        fprintf(stderr, "Eroare la trimiterea comenzii LOGIN.\n");
+        return -1;
+    }
+
+    char response[MAX_LINE];
+
+    if (receive_result_text(sockfd, response, sizeof(response)) != 0)
+    {
+        fprintf(stderr, "Eroare la primirea raspunsului LOGIN.\n");
+        return -1;
+    }
+
+    if (strncmp(response, "OK", 2) != 0)
+    {
+        fprintf(stderr, "Autentificare admin esuata: %s", response);
+        return -1;
+    }
+
     return 0;
 }
 
 /*
   Trimite o comanda administrativa catre server.
-  Comanda este primita fara '\n', iar functia adauga linia noua automat.
+  Pentru fiecare comanda:
+  - se deschide conexiunea
+  - se trimite LOGIN
+  - se trimite comanda admin
+  - se primeste raspunsul
 */
 static int send_admin_command(const char *command)
 {
     int sockfd = connect_to_server();
     if (sockfd < 0)
     {
+        return -1;
+    }
+
+    if (login_to_server(sockfd) != 0)
+    {
+        (void)close(sockfd);
         return -1;
     }
 
@@ -209,7 +293,7 @@ static int send_admin_command(const char *command)
         return -1;
     }
 
-    if (receive_result(sockfd) != 0)
+    if (receive_and_print_result(sockfd) != 0)
     {
         fprintf(stderr, "Eroare la primirea raspunsului.\n");
         (void)close(sockfd);

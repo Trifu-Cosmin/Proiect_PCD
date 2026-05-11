@@ -9,15 +9,103 @@ Aplicatia foloseste socket-uri TCP. Comenzile sunt transmise in format text, iar
 Flux general:
 
 ```txt
-Client normal -> Server -> Analyzer -> Server -> Client normal
-Client admin  -> Server -> Raspuns statistici
+Client normal -> LOGIN -> Server -> UPLOAD/DOWNLOAD_REPORT -> Server -> Client normal
+Client admin  -> LOGIN -> Server -> STATS/LOGS/LIST -> Server -> Client admin
 ```
 
 ---
 
-## 2. Comenzi client normal
+## 2. Autentificare
 
-### 2.1 UPLOAD
+Prima comanda trimisa catre server trebuie sa fie `LOGIN`.
+
+Format:
+
+```txt
+LOGIN <username> <password>
+```
+
+Exemplu pentru client normal:
+
+```txt
+LOGIN user1 pass1
+```
+
+Exemplu pentru client admin:
+
+```txt
+LOGIN admin admin123
+```
+
+Serverul verifica datele in fisierul:
+
+```txt
+config/users.cfg
+```
+
+Formatul fisierului este:
+
+```txt
+username:password:role
+```
+
+Exemplu:
+
+```txt
+user1:pass1:user
+admin:admin123:admin
+```
+
+Daca autentificarea reuseste, serverul raspunde cu:
+
+```txt
+RESULT <size>
+OK role=user
+```
+
+sau:
+
+```txt
+RESULT <size>
+OK role=admin
+```
+
+Daca autentificarea esueaza, serverul raspunde cu:
+
+```txt
+RESULT <size>
+ERROR: invalid credentials
+```
+
+---
+
+## 3. Drepturi pe roluri
+
+### User normal
+
+Un user normal poate folosi urmatoarele comenzi:
+
+```txt
+UPLOAD
+DOWNLOAD_REPORT
+```
+
+### Admin
+
+Un admin poate folosi urmatoarele comenzi:
+
+```txt
+STATS
+LOGS
+LIST_UPLOADS
+LIST_REPORTS
+```
+
+---
+
+## 4. Comenzi client normal
+
+### 4.1 UPLOAD
 
 Comanda este folosita pentru trimiterea unui fisier sursa catre server.
 
@@ -40,32 +128,49 @@ Serverul:
 1. primeste fisierul
 2. il salveaza in directorul `uploads/`
 3. ruleaza analyzer-ul folosind `fork`, `exec` si `pipe`
-4. trimite raportul rezultat inapoi clientului
+4. salveaza raportul in directorul `reports/`
+5. trimite raportul rezultat inapoi clientului
 
 ---
-### 2.2 DOWNLOAD_REPORT
+
+### 4.2 DOWNLOAD_REPORT
 
 Comanda este folosita pentru descarcarea unui raport generat de server.
 
 Format:
 
-```txt```
+```txt
 DOWNLOAD_REPORT <report_name>
+```
 
 Exemplu:
-DOWNLOAD_REPORT sample_report.txt
 
-Serverul cauta raportul in directorul reports/ si il trimite catre client.
+```txt
+DOWNLOAD_REPORT sample_report.txt
+```
+
+Serverul cauta raportul in directorul `reports/` si il trimite catre client.
 
 Raspuns server:
+
+```txt
 FILE <filename> <size>
 <file_bytes>
-Clientul salveaza fisierul primit in directorul downloads/.
+```
+
+Clientul salveaza fisierul primit in directorul:
+
+```txt
+downloads/
+```
+
 Aceasta operatie permite transferul de fisiere si in sensul server -> client.
 
-## 3. Comenzi client admin
+---
 
-### 3.1 STATS
+## 5. Comenzi client admin
+
+### 5.1 STATS
 
 Comanda este folosita pentru obtinerea statisticilor serverului.
 
@@ -80,14 +185,74 @@ Raspuns posibil:
 ```txt
 Server status: running
 Analyzed files: 2
-Last file: bad.c
+Last file: sample.c
 ```
 
 ---
 
-## 4. Raspunsuri server
+### 5.2 LOGS
 
-Serverul raspunde folosind formatul:
+Comanda este folosita pentru afisarea logurilor serverului.
+
+Format:
+
+```txt
+LOGS
+```
+
+Serverul citeste continutul fisierului:
+
+```txt
+logs/server.log
+```
+
+si il trimite catre admin client.
+
+---
+
+### 5.3 LIST_UPLOADS
+
+Comanda este folosita pentru listarea fisierelor uploadate pe server.
+
+Format:
+
+```txt
+LIST_UPLOADS
+```
+
+Serverul listeaza continutul directorului:
+
+```txt
+uploads/
+```
+
+---
+
+### 5.4 LIST_REPORTS
+
+Comanda este folosita pentru listarea rapoartelor generate.
+
+Format:
+
+```txt
+LIST_REPORTS
+```
+
+Serverul listeaza continutul directorului:
+
+```txt
+reports/
+```
+
+---
+
+## 6. Raspunsuri server
+
+### 6.1 RESULT
+
+Serverul foloseste `RESULT` pentru raspunsuri text.
+
+Format:
 
 ```txt
 RESULT <size>
@@ -109,26 +274,52 @@ Diagnostics count: 0
 
 ---
 
-## 5. Comenzi implementate
+### 6.2 FILE
 
-| Comanda | Client | Descriere |
-|---|---|---|
-| UPLOAD | client normal | Trimite un fisier catre server pentru analiza |
-| STATS | admin client | Cere statistici de la server |
-| RESULT | server | Trimite raspunsul catre client |
+Serverul foloseste `FILE` pentru transfer de fisiere catre client.
+
+Format:
+
+```txt
+FILE <filename> <size>
+<file_bytes>
+```
+
+Exemplu:
+
+```txt
+FILE sample_report.txt 700
+```
+
+Dupa header, serverul trimite exact `size` bytes.
 
 ---
 
-## 6. Extensii viitoare
+## 7. Comenzi implementate
+
+| Comanda | Client | Descriere |
+|---|---|---|
+| LOGIN | client normal / admin | Autentifica utilizatorul |
+| UPLOAD | client normal | Trimite un fisier catre server pentru analiza |
+| DOWNLOAD_REPORT | client normal | Descarca un raport generat de server |
+| STATS | admin client | Cere statistici de la server |
+| LOGS | admin client | Cere logurile serverului |
+| LIST_UPLOADS | admin client | Listeaza fisierele uploadate |
+| LIST_REPORTS | admin client | Listeaza rapoartele generate |
+| RESULT | server | Trimite raspuns text catre client |
+| FILE | server | Trimite fisier catre client |
+
+---
+
+## 8. Extensii viitoare
 
 Protocolul poate fi extins cu:
 
-- LOGIN username password
-- LOGS
 - JOBS
-- LIST_REPORTS
-- DOWNLOAD_REPORT
-- QUIT
-- ERROR <message>
-
-Aceste extensii sunt utile pentru Milestone 2, unde trebuie dezvoltate mai multe operatii pentru clientul normal si clientul admin.
+- CLEAR_LOGS
+- DELETE_REPORT
+- SERVER_STATUS
+- SHUTDOWN
+- coada de procesare
+- sesiuni persistente
+- transfer de fisiere in chunks mari

@@ -3,28 +3,36 @@
   Acest fisier implementeaza clientul normal al aplicatiei.
 
   Clientul poate:
-  - trimite un fisier sursa catre server pentru analiza
-  - primi rezultatul analizei
-  - descarca un raport salvat pe server
+  - sa se autentifice automat la server ca user normal
+  - sa trimita un fisier sursa catre server pentru analiza
+  - sa primeasca rezultatul analizei
+  - sa descarce un raport salvat pe server
 
   Moduri de rulare:
     ./client tests/sample.c
     ./client upload tests/sample.c
     ./client download sample_report.txt
+
+  Pentru autentificare se folosesc credentialele:
+    user1 / pass1
 */
 
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <arpa/inet.h>  // Pentru inet_addr
+#include <errno.h>      // Pentru errno, EEXIST
+#include <netinet/in.h> // Pentru sockaddr_in
+#include <stdio.h>      // Pentru printf, fprintf, fopen, fread, fwrite
+#include <stdlib.h>     // Pentru malloc, free
+#include <string.h>     // Pentru strlen, strcmp, strncmp, memset, sscanf, strrchr
+#include <sys/socket.h> // Pentru socket, connect, send, recv
+#include <sys/stat.h>   // Pentru mkdir
+#include <unistd.h>     // Pentru close
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
+
+#define CLIENT_USERNAME "user1"
+#define CLIENT_PASSWORD "pass1"
+
 #define MAX_LINE 1024
 #define FILE_CHUNK 4096
 
@@ -46,6 +54,8 @@ static int ensure_dir(const char *dirname)
 
 /*
   Trimite tot bufferul prin socket.
+  send() poate trimite partial, deci functia repeta trimiterea pana cand
+  tot continutul a fost transmis.
 */
 static int send_all(int sockfd, const void *buffer, size_t length)
 {
@@ -91,7 +101,7 @@ static int recv_all(int sockfd, void *buffer, size_t length)
 }
 
 /*
-  Citeste o linie din socket pana la '\n'.
+  Citeste o linie din socket pana la caracterul '\n'.
 */
 static int recv_line(int sockfd, char *buffer, size_t max_len)
 {
@@ -127,6 +137,7 @@ static int recv_line(int sockfd, char *buffer, size_t max_len)
 
 /*
   Intoarce numele fisierului dintr-o cale.
+  Exemplu: tests/sample.c -> sample.c
 */
 static const char *get_basename(const char *path)
 {
@@ -221,11 +232,19 @@ static int read_file(const char *path, char **buffer_out, size_t *size_out)
 }
 
 /*
-  Primeste si afiseaza raspuns RESULT.
+  Primeste raspuns RESULT de la server si il pune in buffer.
+  Format:
+    RESULT <size>
+    <payload>
 */
-static int receive_result(int sockfd)
+static int receive_result_text(int sockfd, char *output, size_t output_size)
 {
     char line[MAX_LINE];
+
+    if (output_size == 0U)
+    {
+        return -1;
+    }
 
     if (recv_line(sockfd, line, sizeof(line)) <= 0)
     {
@@ -254,14 +273,79 @@ static int receive_result(int sockfd)
 
     result[result_size] = '\0';
 
-    printf("%s", result);
-
+    int written = snprintf(output, output_size, "%s", result);
     free(result);
+
+    if (written < 0 || (size_t)written >= output_size)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+  Primeste si afiseaza raspuns RESULT.
+*/
+static int receive_and_print_result(int sockfd)
+{
+    char result[65536];
+
+    if (receive_result_text(sockfd, result, sizeof(result)) != 0)
+    {
+        return -1;
+    }
+
+    printf("%s", result);
+    return 0;
+}
+
+/*
+  Trimite comanda LOGIN catre server.
+  Clientul normal se autentifica folosind user1/pass1.
+*/
+static int login_to_server(int sockfd)
+{
+    char command[MAX_LINE];
+
+    int written = snprintf(command,
+                           sizeof(command),
+                           "LOGIN %s %s\n",
+                           CLIENT_USERNAME,
+                           CLIENT_PASSWORD);
+
+    if (written < 0 || (size_t)written >= sizeof(command))
+    {
+        fprintf(stderr, "Comanda LOGIN este prea lunga.\n");
+        return -1;
+    }
+
+    if (send_all(sockfd, command, strlen(command)) != 0)
+    {
+        fprintf(stderr, "Eroare la trimiterea comenzii LOGIN.\n");
+        return -1;
+    }
+
+    char response[MAX_LINE];
+
+    if (receive_result_text(sockfd, response, sizeof(response)) != 0)
+    {
+        fprintf(stderr, "Eroare la primirea raspunsului LOGIN.\n");
+        return -1;
+    }
+
+    if (strncmp(response, "OK", 2) != 0)
+    {
+        fprintf(stderr, "Autentificare esuata: %s", response);
+        return -1;
+    }
+
     return 0;
 }
 
 /*
   Primeste un fisier trimis de server si il salveaza in downloads/.
+  Daca serverul trimite RESULT in loc de FILE, mesajul este afisat.
 */
 static int receive_file_response(int sockfd)
 {
@@ -272,6 +356,9 @@ static int receive_file_response(int sockfd)
         return -1;
     }
 
+    /*
+      Serverul poate raspunde cu RESULT daca apare o eroare.
+    */
     if (strncmp(line, "RESULT ", 7) == 0)
     {
         size_t result_size = 0;
@@ -384,6 +471,13 @@ static int upload_file(const char *filepath)
         return 1;
     }
 
+    if (login_to_server(sockfd) != 0)
+    {
+        free(file_buffer);
+        (void)close(sockfd);
+        return 1;
+    }
+
     char header[MAX_LINE];
 
     int written = snprintf(header, sizeof(header), "UPLOAD %s %zu\n", filename, file_size);
@@ -413,7 +507,7 @@ static int upload_file(const char *filepath)
 
     free(file_buffer);
 
-    if (receive_result(sockfd) != 0)
+    if (receive_and_print_result(sockfd) != 0)
     {
         fprintf(stderr, "Eroare la primirea rezultatului.\n");
         (void)close(sockfd);
@@ -432,6 +526,12 @@ static int download_report(const char *report_name)
     int sockfd = connect_to_server();
     if (sockfd < 0)
     {
+        return 1;
+    }
+
+    if (login_to_server(sockfd) != 0)
+    {
+        (void)close(sockfd);
         return 1;
     }
 

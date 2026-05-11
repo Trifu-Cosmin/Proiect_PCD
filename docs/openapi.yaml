@@ -10,6 +10,26 @@ servers:
     description: Server local pentru analiza codului sursa
 
 paths:
+  /auth/login:
+    post:
+      summary: Autentifica un utilizator
+      description: Primeste username si password si intoarce rolul utilizatorului.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Autentificare reusita
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Date de autentificare invalide
+
   /analyze:
     post:
       summary: Analizeaza un fisier sursa
@@ -33,20 +53,10 @@ paths:
                 $ref: '#/components/schemas/AnalysisResult'
         '400':
           description: Cerere invalida
+        '401':
+          description: Utilizator neautentificat
         '500':
           description: Eroare interna la analiza
-
-  /admin/stats:
-    get:
-      summary: Returneaza statistici server
-      description: Intoarce informatii despre statusul serverului si fisierele analizate.
-      responses:
-        '200':
-          description: Statistici returnate cu succes
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServerStats'
 
   /reports/{reportId}:
     get:
@@ -66,8 +76,70 @@ paths:
             text/plain:
               schema:
                 type: string
+        '401':
+          description: Utilizator neautentificat
         '404':
           description: Raportul nu a fost gasit
+
+  /admin/stats:
+    get:
+      summary: Returneaza statistici server
+      description: Intoarce informatii despre statusul serverului si fisierele analizate.
+      responses:
+        '200':
+          description: Statistici returnate cu succes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerStats'
+        '401':
+          description: Utilizator neautentificat
+        '403':
+          description: Permisiuni insuficiente
+
+  /admin/logs:
+    get:
+      summary: Returneaza logurile serverului
+      description: Intoarce continutul fisierului logs/server.log.
+      responses:
+        '200':
+          description: Loguri returnate cu succes
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Utilizator neautentificat
+        '403':
+          description: Permisiuni insuficiente
+
+  /admin/uploads:
+    get:
+      summary: Listeaza fisierele uploadate
+      description: Intoarce lista fisierelor din directorul uploads.
+      responses:
+        '200':
+          description: Lista returnata cu succes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileList'
+        '403':
+          description: Permisiuni insuficiente
+
+  /admin/reports:
+    get:
+      summary: Listeaza rapoartele generate
+      description: Intoarce lista fisierelor din directorul reports.
+      responses:
+        '200':
+          description: Lista returnata cu succes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileList'
+        '403':
+          description: Permisiuni insuficiente
 
   /health:
     get:
@@ -86,6 +158,26 @@ paths:
 
 components:
   schemas:
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          example: user1
+        password:
+          type: string
+          example: pass1
+
+    LoginResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        role:
+          type: string
+          example: user
+
     AnalysisResult:
       type: object
       properties:
@@ -129,4 +221,15 @@ components:
           example: 2
         lastFile:
           type: string
-          example: bad.c
+          example: sample.c
+
+    FileList:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+          example:
+            - sample.c
+            - bad.c

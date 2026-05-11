@@ -6,6 +6,7 @@
 
   Serverul:
   - porneste pe 127.0.0.1:8080
+  - foloseste autentificare simpla prin config/users.cfg
   - accepta conexiuni de la clienti
   - primeste fisiere sursa prin comanda UPLOAD
   - salveaza fisierele primite in directorul uploads/
@@ -17,6 +18,7 @@
   - raspunde la comenzi admin: STATS, LOGS, LIST_UPLOADS, LIST_REPORTS
 
   Protocol simplificat:
+    LOGIN <username> <password>
     UPLOAD <filename> <size>
     DOWNLOAD_REPORT <report_name>
     STATS
@@ -48,6 +50,9 @@
 #define MAX_PATH 512
 #define MAX_RESULT 65536
 #define FILE_CHUNK 4096
+#define MAX_USER 64
+#define MAX_PASS 64
+#define MAX_ROLE 32
 
 static unsigned analyzed_files = 0;
 static char last_file[MAX_FILENAME] = "none";
@@ -316,6 +321,119 @@ static int append_text(char *buffer, size_t buffer_size, size_t *used, const cha
     }
 
     *used += (size_t)written;
+    return 0;
+}
+
+/*
+  Verifica username/parola in config/users.cfg.
+
+  Format fisier:
+    username:password:role
+*/
+static int authenticate_user(const char *username, const char *password, char *role, size_t role_size)
+{
+    FILE *file = fopen("config/users.cfg", "r");
+    if (file == NULL)
+    {
+        return 0;
+    }
+
+    char line[MAX_LINE];
+
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        char file_user[MAX_USER];
+        char file_pass[MAX_PASS];
+        char file_role[MAX_ROLE];
+
+        line[strcspn(line, "\n")] = '\0';
+
+        if (sscanf(line, "%63[^:]:%63[^:]:%31s", file_user, file_pass, file_role) != 3)
+        {
+            continue;
+        }
+
+        if (strcmp(username, file_user) == 0 && strcmp(password, file_pass) == 0)
+        {
+            int written = snprintf(role, role_size, "%s", file_role);
+            fclose(file);
+
+            if (written < 0 || (size_t)written >= role_size)
+            {
+                return 0;
+            }
+
+            return 1;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+
+/*
+  Verifica daca un rol este admin.
+*/
+static int is_admin_role(const char *role)
+{
+    return strcmp(role, "admin") == 0;
+}
+
+/*
+  Verifica daca un rol este user sau admin.
+*/
+static int is_normal_or_admin_role(const char *role)
+{
+    return strcmp(role, "user") == 0 || strcmp(role, "admin") == 0;
+}
+
+/*
+  Proceseaza comanda LOGIN.
+*/
+static int handle_login(int client_fd, const char *line, char *role, size_t role_size)
+{
+    char username[MAX_USER];
+    char password[MAX_PASS];
+
+    if (sscanf(line, "LOGIN %63s %63s", username, password) != 2)
+    {
+        log_message("ERROR", "Invalid LOGIN command");
+        return send_all(client_fd, "RESULT 29\nERROR: invalid LOGIN command\n", 39);
+    }
+
+    if (authenticate_user(username, password, role, role_size) == 0)
+    {
+        log_message("ERROR", "Authentication failed for user: %s", username);
+        return send_all(client_fd, "RESULT 27\nERROR: invalid credentials\n", 37);
+    }
+
+    char response[MAX_LINE];
+
+    int written = snprintf(response, sizeof(response), "OK role=%s\n", role);
+    if (written < 0 || (size_t)written >= sizeof(response))
+    {
+        return -1;
+    }
+
+    char header[MAX_LINE];
+
+    written = snprintf(header, sizeof(header), "RESULT %zu\n", strlen(response));
+    if (written < 0 || (size_t)written >= sizeof(header))
+    {
+        return -1;
+    }
+
+    if (send_all(client_fd, header, strlen(header)) != 0)
+    {
+        return -1;
+    }
+
+    if (send_all(client_fd, response, strlen(response)) != 0)
+    {
+        return -1;
+    }
+
+    log_message("INFO", "Authentication successful for user: %s, role: %s", username, role);
     return 0;
 }
 
@@ -720,39 +838,95 @@ static int handle_upload(int client_fd, const char *line)
 
 /*
   Proceseaza o conexiune client.
+  Prima comanda trebuie sa fie LOGIN.
 */
 static void handle_client(int client_fd)
 {
     char line[MAX_LINE];
+    char role[MAX_ROLE];
 
     if (recv_line(client_fd, line, sizeof(line)) <= 0)
     {
-        log_message("ERROR", "Failed to receive command from client");
+        log_message("ERROR", "Failed to receive LOGIN from client");
+        return;
+    }
+
+    if (strncmp(line, "LOGIN ", 6) != 0)
+    {
+        log_message("ERROR", "Client tried command without LOGIN");
+        (void)send_result_response(client_fd, "ERROR: login required\n");
+        return;
+    }
+
+    if (handle_login(client_fd, line, role, sizeof(role)) != 0)
+    {
+        return;
+    }
+
+    if (recv_line(client_fd, line, sizeof(line)) <= 0)
+    {
+        log_message("ERROR", "Failed to receive command after LOGIN");
         return;
     }
 
     if (strncmp(line, "UPLOAD ", 7) == 0)
     {
+        if (!is_normal_or_admin_role(role))
+        {
+            (void)send_result_response(client_fd, "ERROR: permission denied\n");
+            return;
+        }
+
         (void)handle_upload(client_fd, line);
     }
     else if (strncmp(line, "DOWNLOAD_REPORT ", 16) == 0)
     {
+        if (!is_normal_or_admin_role(role))
+        {
+            (void)send_result_response(client_fd, "ERROR: permission denied\n");
+            return;
+        }
+
         (void)handle_download_report(client_fd, line);
     }
     else if (strcmp(line, "STATS") == 0)
     {
+        if (!is_admin_role(role))
+        {
+            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
+            return;
+        }
+
         (void)handle_stats(client_fd);
     }
     else if (strcmp(line, "LOGS") == 0)
     {
+        if (!is_admin_role(role))
+        {
+            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
+            return;
+        }
+
         (void)handle_logs(client_fd);
     }
     else if (strcmp(line, "LIST_UPLOADS") == 0)
     {
+        if (!is_admin_role(role))
+        {
+            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
+            return;
+        }
+
         (void)handle_list_directory(client_fd, "uploads", "Uploaded files:");
     }
     else if (strcmp(line, "LIST_REPORTS") == 0)
     {
+        if (!is_admin_role(role))
+        {
+            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
+            return;
+        }
+
         (void)handle_list_directory(client_fd, "reports", "Generated reports:");
     }
     else if (strcmp(line, "QUIT") == 0)
