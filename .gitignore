@@ -8,3 +8,4 @@ reports/
 logs/
 downloads/
 *.o
+downloads_py/

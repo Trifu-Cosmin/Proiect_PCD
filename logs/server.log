@@ -111,3 +111,14 @@
 [2026-05-11 16:18:40] INFO Client connected
 [2026-05-11 16:18:40] INFO Authentication successful for user: admin, role: admin
 [2026-05-11 16:18:40] INFO Client disconnected
+[2026-05-13 14:17:55] INFO Server started on 127.0.0.1:8080
+[2026-05-13 14:18:03] INFO Client connected
+[2026-05-13 14:18:03] INFO Authentication successful for user: user1, role: user
+[2026-05-13 14:18:03] INFO File uploaded: sample.c (582 bytes)
+[2026-05-13 14:18:04] INFO Report saved for file: sample.c
+[2026-05-13 14:18:04] INFO Analysis completed for file: sample.c
+[2026-05-13 14:18:04] INFO Client disconnected
+[2026-05-13 14:18:10] INFO Client connected
+[2026-05-13 14:18:10] INFO Authentication successful for user: user1, role: user
+[2026-05-13 14:18:10] INFO Client requested report download: sample_report.txt
+[2026-05-13 14:18:10] INFO Client disconnected
