@@ -34,12 +34,16 @@ paths:
     post:
       summary: Analizeaza un fisier sursa
       description: Primeste un fisier sursa C/C++ si intoarce un raport de analiza.
+      security:
+        - basicAuth: []
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required:
+                - sourceFile
               properties:
                 sourceFile:
                   type: string
@@ -53,22 +57,37 @@ paths:
                 $ref: '#/components/schemas/AnalysisResult'
         '400':
           description: Cerere invalida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Utilizator neautentificat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Eroare interna la analiza
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /reports/{reportId}:
     get:
       summary: Returneaza un raport de analiza
       description: Intoarce raportul generat pentru o analiza anterioara.
+      security:
+        - basicAuth: []
       parameters:
         - name: reportId
           in: path
           required: true
+          description: Numele sau identificatorul raportului.
           schema:
             type: string
-          example: sample_report
+          example: sample_report.txt
       responses:
         '200':
           description: Raport returnat cu succes
@@ -76,15 +95,31 @@ paths:
             text/plain:
               schema:
                 type: string
+              example: |
+                === Analysis Result ===
+                Project: PCD T17 Semantic Analyzer
+                Source file: uploads/sample.c
+                Diagnostics count: 0
+                Functions count: 3
         '401':
           description: Utilizator neautentificat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Raportul nu a fost gasit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/stats:
     get:
       summary: Returneaza statistici server
-      description: Intoarce informatii despre statusul serverului si fisierele analizate.
+      description: Intoarce statusul serverului, numarul de fisiere analizate si ultimul fisier analizat.
+      security:
+        - basicAuth: []
       responses:
         '200':
           description: Statistici returnate cu succes
@@ -94,13 +129,23 @@ paths:
                 $ref: '#/components/schemas/ServerStats'
         '401':
           description: Utilizator neautentificat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Permisiuni insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/logs:
     get:
       summary: Returneaza logurile serverului
       description: Intoarce continutul fisierului logs/server.log.
+      security:
+        - basicAuth: []
       responses:
         '200':
           description: Loguri returnate cu succes
@@ -108,15 +153,29 @@ paths:
             text/plain:
               schema:
                 type: string
+              example: |
+                [2026-05-13 14:54:29] INFO Concurrent server started on 127.0.0.1:8080
+                [2026-05-13 14:54:39] INFO Client connected in child process
+                [2026-05-13 14:54:39] INFO Authentication successful for user: user1, role: user
         '401':
           description: Utilizator neautentificat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Permisiuni insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/uploads:
     get:
       summary: Listeaza fisierele uploadate
       description: Intoarce lista fisierelor din directorul uploads.
+      security:
+        - basicAuth: []
       responses:
         '200':
           description: Lista returnata cu succes
@@ -124,13 +183,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FileList'
+        '401':
+          description: Utilizator neautentificat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Permisiuni insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /admin/reports:
     get:
       summary: Listeaza rapoartele generate
       description: Intoarce lista fisierelor din directorul reports.
+      security:
+        - basicAuth: []
       responses:
         '200':
           description: Lista returnata cu succes
@@ -138,28 +209,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FileList'
+        '401':
+          description: Utilizator neautentificat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Permisiuni insuficiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /health:
     get:
       summary: Verifica daca serverul ruleaza
+      description: Endpoint simplu pentru verificarea statusului serverului.
       responses:
         '200':
           description: Server functional
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: running
+                $ref: '#/components/schemas/HealthResponse'
 
 components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
   schemas:
     LoginRequest:
       type: object
+      required:
+        - username
+        - password
       properties:
         username:
           type: string
@@ -209,6 +295,11 @@ components:
           type: array
           items:
             type: string
+          example:
+            - "Nu exista diagnostice."
+        reportName:
+          type: string
+          example: sample_report.txt
 
     ServerStats:
       type: object
@@ -233,3 +324,17 @@ components:
           example:
             - sample.c
             - bad.c
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: running
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: permission denied

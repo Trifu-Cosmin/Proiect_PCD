@@ -2,15 +2,19 @@
 
 ## Descriere proiect
 
-Acest proiect implementeaza o aplicatie in limbajul C pentru analiza semantica a codului sursa C/C++.
+Acest proiect implementeaza o aplicatie client-server in limbajul C pentru analiza semantica a codului sursa C/C++.
 
-Aplicatia foloseste:
+Aplicatia permite trimiterea unui fisier sursa catre un server TCP, rularea unei analize folosind libclang si returnarea raportului catre client. Pe langa clientul normal exista si un client de administrare, folosit pentru operatii simple asupra serverului.
+
+Proiectul foloseste:
 - libconfig pentru citirea configuratiei
 - libclang pentru analiza codului sursa
 - getopt pentru parsarea argumentelor din linia de comanda
 - socket-uri TCP pentru comunicarea client-server
 - fork, exec si pipe pentru rularea analyzer-ului intr-un proces separat
 - autentificare simpla pentru separarea userilor normali de admin
+- fork per client pentru tratarea concurenta a conexiunilor
+- client Python ca exemplu de client in alt limbaj
 
 Proiectul este dezvoltat pentru tema T17 - Analiza Semantica Cod Sursa, din cadrul materiei PCD.
 
@@ -30,8 +34,10 @@ Proiectul este dezvoltat pentru tema T17 - Analiza Semantica Cod Sursa, din cadr
   - bucle while
 - Afisare diagnostice generate de libclang
 - Server TCP
-- Client normal
-- Client admin
+- Tratare concurenta a clientilor folosind `fork()`
+- Client normal in C
+- Client admin in C
+- Client normal in Python
 - Autentificare user/admin prin `config/users.cfg`
 - Separare roluri:
   - user normal pentru upload si download raport
@@ -43,6 +49,8 @@ Proiectul este dezvoltat pentru tema T17 - Analiza Semantica Cod Sursa, din cadr
 - Logging server in `logs/server.log`
 - Protocol documentat in `docs/protocol.md`
 - Specificatie OpenAPI in `docs/openapi.yaml`
+- Document SRS/SDD in `docs/SRS_SDD.md`
+- Fisiere de test pentru cod valid si cod cu erori/warning-uri
 
 ---
 
@@ -57,6 +65,8 @@ Proiect_PCD/
 │   ├── openapi.yaml
 │   ├── protocol.md
 │   └── SRS_SDD.md
+├── python_client/
+│   └── client.py
 ├── src/
 │   ├── analyzer.c
 │   ├── main.c
@@ -65,7 +75,13 @@ Proiect_PCD/
 │   └── admin_client.c
 ├── tests/
 │   ├── sample.c
-│   └── bad.c
+│   ├── bad.c
+│   ├── good_math.c
+│   ├── good_while.c
+│   ├── good_nested.c
+│   ├── bad_uninitialized.c
+│   ├── bad_syntax.c
+│   └── bad_type.c
 ├── Makefile
 ├── README.md
 └── .gitignore
@@ -80,6 +96,7 @@ Proiect_PCD/
 - make
 - libconfig
 - libclang
+- python3
 
 ---
 
@@ -87,7 +104,7 @@ Proiect_PCD/
 
 ```bash
 sudo apt update
-sudo apt install build-essential libconfig-dev libclang-dev clang -y
+sudo apt install build-essential libconfig-dev libclang-dev clang python3 -y
 ```
 
 ---
@@ -200,9 +217,9 @@ export SOURCE_FILE=tests/sample.c
 
 ---
 
-## Rulare server si client
+## Rulare server
 
-### Terminal 1 - server
+Intr-un terminal separat:
 
 ```bash
 ./server
@@ -214,9 +231,11 @@ Serverul porneste pe:
 127.0.0.1:8080
 ```
 
+Serverul accepta conexiuni TCP si trateaza clientii concurent folosind `fork()`.
+
 ---
 
-### Terminal 2 - client normal
+## Rulare client normal C
 
 Pentru upload si analiza fisier:
 
@@ -238,7 +257,7 @@ Pentru fisier cu warning-uri:
 
 ---
 
-### Download raport de la server
+## Download raport cu clientul C
 
 Dupa ce serverul a generat un raport in directorul `reports/`, clientul il poate descarca folosind:
 
@@ -258,11 +277,13 @@ Raportul va fi salvat local in directorul:
 downloads/
 ```
 
-Prin aceasta comanda, proiectul suporta si transfer server -> client.
+Prin aceasta comanda, proiectul suporta transfer server -> client.
 
 ---
 
-### Terminal 3 - admin client
+## Rulare client admin C
+
+Intr-un terminal separat:
 
 ```bash
 ./admin_client
@@ -276,6 +297,34 @@ Admin clientul afiseaza un meniu:
 3. List uploaded files
 4. List reports
 5. Quit
+```
+
+---
+
+## Rulare client Python
+
+Clientul Python se afla in:
+
+```txt
+python_client/client.py
+```
+
+Upload si analiza fisier:
+
+```bash
+python3 python_client/client.py upload tests/sample.c
+```
+
+Download raport:
+
+```bash
+python3 python_client/client.py download sample_report.txt
+```
+
+Rapoartele descarcate prin clientul Python sunt salvate in:
+
+```txt
+downloads_py/
 ```
 
 ---
@@ -324,23 +373,114 @@ Parse completed.
 
 ---
 
+## Fisiere de test
+
+Proiectul include mai multe fisiere de test in directorul `tests/`.
+
+### Fisiere valide
+
+```txt
+tests/sample.c
+tests/good_math.c
+tests/good_while.c
+tests/good_nested.c
+```
+
+Aceste fisiere ar trebui sa produca:
+
+```txt
+Diagnostics count: 0
+```
+
+### Fisiere cu warning-uri sau erori intentionate
+
+```txt
+tests/bad.c
+tests/bad_uninitialized.c
+tests/bad_syntax.c
+tests/bad_type.c
+```
+
+Aceste fisiere sunt folosite pentru a demonstra ca analyzer-ul detecteaza probleme in cod.
+
+Exemple:
+- variabila folosita neinitializata
+- functie non-void fara valoare returnata
+- conversie incompatibila intre pointer si int
+
+---
+
+## Testare rapida analyzer
+
+```bash
+make clean
+make
+
+./analyzer -f tests/good_math.c -v
+./analyzer -f tests/good_while.c -v
+./analyzer -f tests/good_nested.c -v
+
+./analyzer -f tests/bad_uninitialized.c -v
+./analyzer -f tests/bad_syntax.c -v
+./analyzer -f tests/bad_type.c -v
+```
+
+Pentru fisierele `good_*`, rezultatul asteptat este `Diagnostics count: 0`.
+
+Pentru fisierele `bad_*`, warning-urile sau erorile sunt intentionate.
+
+---
+
+## Testare rapida client-server
+
+Terminal 1:
+
+```bash
+./server
+```
+
+Terminal 2:
+
+```bash
+./client tests/sample.c
+./client tests/bad.c
+./client download sample_report.txt
+```
+
+Terminal 3:
+
+```bash
+./admin_client
+```
+
+Terminal 4:
+
+```bash
+python3 python_client/client.py upload tests/sample.c
+python3 python_client/client.py download sample_report.txt
+```
+
+---
+
 ## Directoare generate la rulare
 
-La rulare, serverul poate genera urmatoarele directoare:
+La rulare, serverul si clientii pot genera urmatoarele directoare:
 
 ```txt
 uploads/
 reports/
 logs/
 downloads/
+downloads_py/
 ```
 
 Rolul lor:
 
 - `uploads/` contine fisierele trimise de client catre server
 - `reports/` contine rapoartele generate de analyzer
-- `logs/` contine logurile serverului
-- `downloads/` contine rapoartele descarcate de client
+- `logs/` contine logurile serverului si statisticile persistente
+- `downloads/` contine rapoartele descarcate de clientul C
+- `downloads_py/` contine rapoartele descarcate de clientul Python
 
 Aceste directoare sunt generate la runtime si sunt ignorate de git.
 
@@ -380,6 +520,8 @@ Aceasta descrie o posibila extensie REST pentru proiect, cu endpoint-uri precum:
 - `POST /analyze`
 - `GET /admin/stats`
 - `GET /admin/logs`
+- `GET /admin/uploads`
+- `GET /admin/reports`
 - `GET /reports/{reportId}`
 - `GET /health`
 
@@ -388,6 +530,7 @@ Aceasta descrie o posibila extensie REST pentru proiect, cu endpoint-uri precum:
 ## Tehnologii utilizate
 
 - C
+- Python
 - gcc
 - make
 - libconfig
@@ -400,38 +543,15 @@ Aceasta descrie o posibila extensie REST pentru proiect, cu endpoint-uri precum:
 
 ---
 
-## Testare rapida
+## Observatii
 
-Terminal 1:
+Proiectul contine o implementare functionala pentru analiza semantica de baza a codului sursa C/C++. Serverul poate primi fisiere de la clienti, poate rula analiza intr-un proces separat si poate returna raportul rezultat.
 
-```bash
-./server
-```
-
-Terminal 2:
-
-```bash
-./client tests/sample.c
-./client tests/bad.c
-./client download sample_report.txt
-```
-
-Terminal 3:
-
-```bash
-./admin_client
-```
-
----
-
-## Posibile extensii
-
-- job queue
+Implementarea actuala include:
+- client normal C
+- client admin C
 - client Python
-- server concurent pentru mai multi clienti
-- transfer fisiere mari in chunks
-- API REST real
-- operatii admin suplimentare
-- stergere rapoarte
-- curatare loguri
-- istoric analize
+- server TCP concurent
+- autentificare simpla
+- transfer bidirectional de fisiere
+- loguri si rapoarte generate automat

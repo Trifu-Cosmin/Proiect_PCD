@@ -2,16 +2,19 @@
 
 ## 1. Descriere generala
 
-Protocolul este folosit pentru comunicarea dintre client, server si clientul de administrare.
+Protocolul este folosit pentru comunicarea dintre clientul normal, clientul admin, clientul Python si serverul TCP.
 
 Aplicatia foloseste socket-uri TCP. Comenzile sunt transmise in format text, iar continutul fisierelor este transmis ca payload dupa header.
 
 Flux general:
 
 ```txt
-Client normal -> LOGIN -> Server -> UPLOAD/DOWNLOAD_REPORT -> Server -> Client normal
-Client admin  -> LOGIN -> Server -> STATS/LOGS/LIST -> Server -> Client admin
+Client normal C -> LOGIN -> Server -> UPLOAD / DOWNLOAD_REPORT -> Server -> Client normal C
+Client Python   -> LOGIN -> Server -> UPLOAD / DOWNLOAD_REPORT -> Server -> Client Python
+Client admin C  -> LOGIN -> Server -> STATS / LOGS / LIST_UPLOADS / LIST_REPORTS -> Server -> Client admin C
 ```
+
+Serverul trateaza conexiunile concurent folosind `fork()`. Pentru fiecare client acceptat, serverul porneste un proces copil care se ocupa de cererea respectiva.
 
 ---
 
@@ -79,9 +82,9 @@ ERROR: invalid credentials
 
 ---
 
-## 3. Drepturi pe roluri
+## 3. Roluri si permisiuni
 
-### User normal
+### 3.1 User normal
 
 Un user normal poate folosi urmatoarele comenzi:
 
@@ -90,7 +93,13 @@ UPLOAD
 DOWNLOAD_REPORT
 ```
 
-### Admin
+Acest rol este folosit de:
+- clientul normal C
+- clientul Python
+
+---
+
+### 3.2 Admin
 
 Un admin poate folosi urmatoarele comenzi:
 
@@ -101,13 +110,16 @@ LIST_UPLOADS
 LIST_REPORTS
 ```
 
+Acest rol este folosit de:
+- clientul admin C
+
 ---
 
 ## 4. Comenzi client normal
 
-### 4.1 UPLOAD
+## 4.1 UPLOAD
 
-Comanda este folosita pentru trimiterea unui fisier sursa catre server.
+Comanda `UPLOAD` este folosita pentru trimiterea unui fisier sursa catre server.
 
 Format:
 
@@ -119,7 +131,7 @@ UPLOAD <filename> <size>
 Exemplu:
 
 ```txt
-UPLOAD sample.c 450
+UPLOAD sample.c 582
 ```
 
 Dupa linia de comanda, clientul trimite exact `size` bytes, reprezentand continutul fisierului.
@@ -131,11 +143,33 @@ Serverul:
 4. salveaza raportul in directorul `reports/`
 5. trimite raportul rezultat inapoi clientului
 
+Raspuns server:
+
+```txt
+RESULT <size>
+<payload>
+```
+
+Exemplu raspuns:
+
+```txt
+RESULT 250
+=== Analysis Result ===
+Project: PCD T17 Semantic Analyzer
+Source file: uploads/sample.c
+Diagnostics count: 0
+Functions count: 3
+Variables count: 8
+If statements count: 1
+For loops count: 1
+While loops count: 0
+```
+
 ---
 
-### 4.2 DOWNLOAD_REPORT
+## 4.2 DOWNLOAD_REPORT
 
-Comanda este folosita pentru descarcarea unui raport generat de server.
+Comanda `DOWNLOAD_REPORT` este folosita pentru descarcarea unui raport generat de server.
 
 Format:
 
@@ -149,7 +183,13 @@ Exemplu:
 DOWNLOAD_REPORT sample_report.txt
 ```
 
-Serverul cauta raportul in directorul `reports/` si il trimite catre client.
+Serverul cauta raportul in directorul:
+
+```txt
+reports/
+```
+
+Daca raportul exista, serverul il trimite catre client folosind raspuns de tip `FILE`.
 
 Raspuns server:
 
@@ -158,21 +198,33 @@ FILE <filename> <size>
 <file_bytes>
 ```
 
-Clientul salveaza fisierul primit in directorul:
+Exemplu:
+
+```txt
+FILE sample_report.txt 700
+```
+
+Clientul C salveaza fisierul primit in:
 
 ```txt
 downloads/
 ```
 
-Aceasta operatie permite transferul de fisiere si in sensul server -> client.
+Clientul Python salveaza fisierul primit in:
+
+```txt
+downloads_py/
+```
+
+Aceasta comanda permite transferul fisierelor si in sensul server -> client.
 
 ---
 
 ## 5. Comenzi client admin
 
-### 5.1 STATS
+## 5.1 STATS
 
-Comanda este folosita pentru obtinerea statisticilor serverului.
+Comanda `STATS` este folosita pentru obtinerea statisticilor serverului.
 
 Format:
 
@@ -183,16 +235,23 @@ STATS
 Raspuns posibil:
 
 ```txt
+RESULT <size>
 Server status: running
 Analyzed files: 2
 Last file: sample.c
 ```
 
+Informatiile sunt citite din fisierul persistent:
+
+```txt
+logs/stats.txt
+```
+
 ---
 
-### 5.2 LOGS
+## 5.2 LOGS
 
-Comanda este folosita pentru afisarea logurilor serverului.
+Comanda `LOGS` este folosita pentru afisarea logurilor serverului.
 
 Format:
 
@@ -208,11 +267,20 @@ logs/server.log
 
 si il trimite catre admin client.
 
+Raspuns posibil:
+
+```txt
+RESULT <size>
+[2026-05-13 14:54:29] INFO Concurrent server started on 127.0.0.1:8080
+[2026-05-13 14:54:39] INFO Client connected in child process
+[2026-05-13 14:54:39] INFO Authentication successful for user: user1, role: user
+```
+
 ---
 
-### 5.3 LIST_UPLOADS
+## 5.3 LIST_UPLOADS
 
-Comanda este folosita pentru listarea fisierelor uploadate pe server.
+Comanda `LIST_UPLOADS` este folosita pentru listarea fisierelor uploadate pe server.
 
 Format:
 
@@ -226,11 +294,20 @@ Serverul listeaza continutul directorului:
 uploads/
 ```
 
+Raspuns posibil:
+
+```txt
+RESULT <size>
+Uploaded files:
+- sample.c
+- bad.c
+```
+
 ---
 
-### 5.4 LIST_REPORTS
+## 5.4 LIST_REPORTS
 
-Comanda este folosita pentru listarea rapoartelor generate.
+Comanda `LIST_REPORTS` este folosita pentru listarea rapoartelor generate.
 
 Format:
 
@@ -244,11 +321,20 @@ Serverul listeaza continutul directorului:
 reports/
 ```
 
+Raspuns posibil:
+
+```txt
+RESULT <size>
+Generated reports:
+- sample_report.txt
+- bad_report.txt
+```
+
 ---
 
 ## 6. Raspunsuri server
 
-### 6.1 RESULT
+## 6.1 RESULT
 
 Serverul foloseste `RESULT` pentru raspunsuri text.
 
@@ -260,21 +346,31 @@ RESULT <size>
 ```
 
 Unde:
-- `size` este dimensiunea raspunsului in bytes
-- `payload` este raportul sau mesajul returnat de server
+- `size` reprezinta dimensiunea raspunsului in bytes
+- `payload` contine raportul, mesajul de eroare sau informatia ceruta
 
-Exemplu:
+Exemple:
+
+```txt
+RESULT 13
+OK role=user
+```
+
+```txt
+RESULT 27
+ERROR: invalid credentials
+```
 
 ```txt
 RESULT 120
-=== Analysis Result ===
-Project: PCD T17 Semantic Analyzer
-Diagnostics count: 0
+Server status: running
+Analyzed files: 2
+Last file: sample.c
 ```
 
 ---
 
-### 6.2 FILE
+## 6.2 FILE
 
 Serverul foloseste `FILE` pentru transfer de fisiere catre client.
 
@@ -284,6 +380,11 @@ Format:
 FILE <filename> <size>
 <file_bytes>
 ```
+
+Unde:
+- `filename` este numele fisierului trimis
+- `size` este dimensiunea fisierului in bytes
+- `file_bytes` reprezinta continutul fisierului
 
 Exemplu:
 
@@ -299,9 +400,9 @@ Dupa header, serverul trimite exact `size` bytes.
 
 | Comanda | Client | Descriere |
 |---|---|---|
-| LOGIN | client normal / admin | Autentifica utilizatorul |
-| UPLOAD | client normal | Trimite un fisier catre server pentru analiza |
-| DOWNLOAD_REPORT | client normal | Descarca un raport generat de server |
+| LOGIN | client normal / admin / Python | Autentifica utilizatorul |
+| UPLOAD | client normal / Python | Trimite un fisier catre server pentru analiza |
+| DOWNLOAD_REPORT | client normal / Python | Descarca un raport generat de server |
 | STATS | admin client | Cere statistici de la server |
 | LOGS | admin client | Cere logurile serverului |
 | LIST_UPLOADS | admin client | Listeaza fisierele uploadate |
@@ -311,7 +412,152 @@ Dupa header, serverul trimite exact `size` bytes.
 
 ---
 
-## 8. Extensii viitoare
+## 8. Directoare folosite de protocol
+
+```txt
+uploads/
+```
+
+Contine fisierele sursa primite de la clienti.
+
+```txt
+reports/
+```
+
+Contine rapoartele generate de analyzer.
+
+```txt
+logs/
+```
+
+Contine logurile serverului si statisticile persistente.
+
+```txt
+downloads/
+```
+
+Contine rapoartele descarcate de clientul C.
+
+```txt
+downloads_py/
+```
+
+Contine rapoartele descarcate de clientul Python.
+
+---
+
+## 9. Exemple de fluxuri
+
+## 9.1 Analiza fisier cu client C
+
+```txt
+Client -> Server:
+LOGIN user1 pass1
+
+Server -> Client:
+RESULT 13
+OK role=user
+
+Client -> Server:
+UPLOAD sample.c 582
+<file_bytes>
+
+Server -> Client:
+RESULT <size>
+<analysis_report>
+```
+
+---
+
+## 9.2 Descarcare raport cu client C
+
+```txt
+Client -> Server:
+LOGIN user1 pass1
+
+Server -> Client:
+RESULT 13
+OK role=user
+
+Client -> Server:
+DOWNLOAD_REPORT sample_report.txt
+
+Server -> Client:
+FILE sample_report.txt 700
+<file_bytes>
+```
+
+---
+
+## 9.3 Cerere statistici admin
+
+```txt
+Admin -> Server:
+LOGIN admin admin123
+
+Server -> Admin:
+RESULT 14
+OK role=admin
+
+Admin -> Server:
+STATS
+
+Server -> Admin:
+RESULT <size>
+Server status: running
+Analyzed files: 2
+Last file: sample.c
+```
+
+---
+
+## 10. Erori posibile
+
+Daca un client trimite o comanda fara LOGIN:
+
+```txt
+RESULT <size>
+ERROR: login required
+```
+
+Daca autentificarea esueaza:
+
+```txt
+RESULT <size>
+ERROR: invalid credentials
+```
+
+Daca userul nu are permisiune:
+
+```txt
+RESULT <size>
+ERROR: permission denied
+```
+
+Daca un user normal incearca o comanda admin:
+
+```txt
+RESULT <size>
+ERROR: admin permission required
+```
+
+Daca raportul cerut nu exista:
+
+```txt
+RESULT <size>
+ERROR: report file not found
+```
+
+Daca o comanda este necunoscuta:
+
+```txt
+RESULT <size>
+ERROR: unknown command
+```
+
+---
+
+## 11. Extensii viitoare
 
 Protocolul poate fi extins cu:
 
@@ -320,6 +566,7 @@ Protocolul poate fi extins cu:
 - DELETE_REPORT
 - SERVER_STATUS
 - SHUTDOWN
-- coada de procesare
+- job queue real
 - sesiuni persistente
-- transfer de fisiere in chunks mari
+- transfer de fisiere mari in chunks
+- coduri de status mai clare
