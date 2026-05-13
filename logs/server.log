@@ -122,3 +122,46 @@
 [2026-05-13 14:18:10] INFO Authentication successful for user: user1, role: user
 [2026-05-13 14:18:10] INFO Client requested report download: sample_report.txt
 [2026-05-13 14:18:10] INFO Client disconnected
+[2026-05-13 14:54:29] INFO Concurrent server started on 127.0.0.1:8080
+[2026-05-13 14:54:39] INFO Client connected in child process
+[2026-05-13 14:54:39] INFO Authentication successful for user: user1, role: user
+[2026-05-13 14:54:39] INFO File uploaded: sample.c (582 bytes)
+[2026-05-13 14:54:40] ERROR Analyzer failed for file: uploads/sample.c
+[2026-05-13 14:54:40] INFO Client disconnected from child process
+[2026-05-13 14:54:47] INFO Client connected in child process
+[2026-05-13 14:54:47] INFO Authentication successful for user: user1, role: user
+[2026-05-13 14:54:47] INFO File uploaded: bad.c (304 bytes)
+[2026-05-13 14:54:47] ERROR Analyzer failed for file: uploads/bad.c
+[2026-05-13 14:54:47] INFO Client disconnected from child process
+[2026-05-13 14:54:56] INFO Client connected in child process
+[2026-05-13 14:54:56] INFO Authentication successful for user: admin, role: admin
+[2026-05-13 14:54:56] INFO Admin requested STATS
+[2026-05-13 14:54:56] INFO Client disconnected from child process
+[2026-05-13 14:54:57] INFO Client connected in child process
+[2026-05-13 14:54:57] INFO Authentication successful for user: admin, role: admin
+[2026-05-13 14:54:57] INFO Admin requested LOGS
+[2026-05-13 14:54:57] INFO Client disconnected from child process
+[2026-05-13 14:54:58] INFO Client connected in child process
+[2026-05-13 14:54:58] INFO Authentication successful for user: admin, role: admin
+[2026-05-13 14:54:58] INFO Admin requested directory listing: uploads
+[2026-05-13 14:54:58] INFO Client disconnected from child process
+[2026-05-13 14:55:00] INFO Client connected in child process
+[2026-05-13 14:55:00] INFO Authentication successful for user: admin, role: admin
+[2026-05-13 14:55:00] INFO Admin requested directory listing: reports
+[2026-05-13 14:55:00] INFO Client disconnected from child process
+[2026-05-13 14:55:01] INFO Client connected in child process
+[2026-05-13 14:55:01] INFO Authentication successful for user: admin, role: admin
+[2026-05-13 14:55:01] INFO Client disconnected from child process
+[2026-05-13 14:57:32] INFO Concurrent server started on 127.0.0.1:8080
+[2026-05-13 14:57:46] INFO Client connected in child process
+[2026-05-13 14:57:46] INFO Authentication successful for user: user1, role: user
+[2026-05-13 14:57:46] INFO File uploaded: sample.c (582 bytes)
+[2026-05-13 14:57:47] INFO Report saved for file: sample.c
+[2026-05-13 14:57:47] INFO Analysis completed for file: sample.c
+[2026-05-13 14:57:47] INFO Client disconnected from child process
+[2026-05-13 14:57:52] INFO Client connected in child process
+[2026-05-13 14:57:52] INFO Authentication successful for user: user1, role: user
+[2026-05-13 14:57:52] INFO File uploaded: bad.c (304 bytes)
+[2026-05-13 14:57:52] INFO Report saved for file: bad.c
+[2026-05-13 14:57:52] INFO Analysis completed for file: bad.c
+[2026-05-13 14:57:52] INFO Client disconnected from child process

@@ -8,6 +8,7 @@
   - porneste pe 127.0.0.1:8080
   - foloseste autentificare simpla prin config/users.cfg
   - accepta conexiuni de la clienti
+  - trateaza clientii concurent folosind fork per client
   - primeste fisiere sursa prin comanda UPLOAD
   - salveaza fisierele primite in directorul uploads/
   - ruleaza analyzer-ul intr-un proces separat folosind fork, exec si pipe
@@ -31,6 +32,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,8 +56,7 @@
 #define MAX_PASS 64
 #define MAX_ROLE 32
 
-static unsigned analyzed_files = 0;
-static char last_file[MAX_FILENAME] = "none";
+#define STATS_FILE "logs/stats.txt"
 
 /*
   Creeaza un director daca nu exista deja.
@@ -325,6 +326,107 @@ static int append_text(char *buffer, size_t buffer_size, size_t *used, const cha
 }
 
 /*
+  Trimite raspuns de forma:
+    RESULT <size>
+    <payload>
+*/
+static int send_result_response(int client_fd, const char *text)
+{
+    char header[MAX_LINE];
+    size_t len = strlen(text);
+
+    int written = snprintf(header, sizeof(header), "RESULT %zu\n", len);
+    if (written < 0 || (size_t)written >= sizeof(header))
+    {
+        return -1;
+    }
+
+    if (send_all(client_fd, header, strlen(header)) != 0)
+    {
+        return -1;
+    }
+
+    if (send_all(client_fd, text, len) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+  Citeste statisticile persistente din logs/stats.txt.
+
+  Pentru server concurent nu mai folosim variabile globale pentru statistici,
+  deoarece fiecare copil are propria copie dupa fork.
+*/
+static void read_stats(unsigned *count, char *last_file, size_t last_file_size)
+{
+    *count = 0;
+
+    if (last_file_size > 0U)
+    {
+        (void)snprintf(last_file, last_file_size, "none");
+    }
+
+    FILE *file = fopen(STATS_FILE, "r");
+    if (file == NULL)
+    {
+        return;
+    }
+
+    unsigned file_count = 0;
+    char file_last[MAX_FILENAME];
+
+    if (fscanf(file, "%u\n%255s", &file_count, file_last) == 2)
+    {
+        *count = file_count;
+        (void)snprintf(last_file, last_file_size, "%s", file_last);
+    }
+
+    fclose(file);
+}
+
+/*
+  Scrie statisticile in logs/stats.txt.
+*/
+static int write_stats(unsigned count, const char *last_file)
+{
+    if (ensure_dir("logs") != 0)
+    {
+        return -1;
+    }
+
+    FILE *file = fopen(STATS_FILE, "w");
+    if (file == NULL)
+    {
+        return -1;
+    }
+
+    fprintf(file, "%u\n%s\n", count, last_file);
+
+    fclose(file);
+    return 0;
+}
+
+/*
+  Actualizeaza statisticile dupa o analiza reusita.
+*/
+static void update_stats(const char *filename)
+{
+    unsigned count = 0;
+    char last_file[MAX_FILENAME];
+
+    read_stats(&count, last_file, sizeof(last_file));
+    count++;
+
+    if (write_stats(count, filename) != 0)
+    {
+        log_message("ERROR", "Could not update stats file");
+    }
+}
+
+/*
   Verifica username/parola in config/users.cfg.
 
   Format fisier:
@@ -398,13 +500,13 @@ static int handle_login(int client_fd, const char *line, char *role, size_t role
     if (sscanf(line, "LOGIN %63s %63s", username, password) != 2)
     {
         log_message("ERROR", "Invalid LOGIN command");
-        return send_all(client_fd, "RESULT 29\nERROR: invalid LOGIN command\n", 39);
+        return send_result_response(client_fd, "ERROR: invalid LOGIN command\n");
     }
 
     if (authenticate_user(username, password, role, role_size) == 0)
     {
         log_message("ERROR", "Authentication failed for user: %s", username);
-        return send_all(client_fd, "RESULT 27\nERROR: invalid credentials\n", 37);
+        return send_result_response(client_fd, "ERROR: invalid credentials\n");
     }
 
     char response[MAX_LINE];
@@ -415,26 +517,8 @@ static int handle_login(int client_fd, const char *line, char *role, size_t role
         return -1;
     }
 
-    char header[MAX_LINE];
-
-    written = snprintf(header, sizeof(header), "RESULT %zu\n", strlen(response));
-    if (written < 0 || (size_t)written >= sizeof(header))
-    {
-        return -1;
-    }
-
-    if (send_all(client_fd, header, strlen(header)) != 0)
-    {
-        return -1;
-    }
-
-    if (send_all(client_fd, response, strlen(response)) != 0)
-    {
-        return -1;
-    }
-
     log_message("INFO", "Authentication successful for user: %s, role: %s", username, role);
-    return 0;
+    return send_result_response(client_fd, response);
 }
 
 /*
@@ -521,35 +605,6 @@ static int run_analyzer(const char *filepath, char *result, size_t result_size)
 }
 
 /*
-  Trimite raspuns de forma:
-    RESULT <size>
-    <payload>
-*/
-static int send_result_response(int client_fd, const char *text)
-{
-    char header[MAX_LINE];
-    size_t len = strlen(text);
-
-    int written = snprintf(header, sizeof(header), "RESULT %zu\n", len);
-    if (written < 0 || (size_t)written >= sizeof(header))
-    {
-        return -1;
-    }
-
-    if (send_all(client_fd, header, strlen(header)) != 0)
-    {
-        return -1;
-    }
-
-    if (send_all(client_fd, text, len) != 0)
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-/*
   Trimite un fisier catre client.
   Format raspuns:
     FILE <filename> <size>
@@ -615,12 +670,17 @@ static int send_file_response(int client_fd, const char *filepath, const char *f
 */
 static int handle_stats(int client_fd)
 {
+    unsigned count = 0;
+    char last_file[MAX_FILENAME];
+
+    read_stats(&count, last_file, sizeof(last_file));
+
     char stats[MAX_RESULT];
 
     int written = snprintf(stats,
                            sizeof(stats),
                            "Server status: running\nAnalyzed files: %u\nLast file: %s\n",
-                           analyzed_files,
+                           count,
                            last_file);
 
     if (written < 0 || (size_t)written >= sizeof(stats))
@@ -823,13 +883,7 @@ static int handle_upload(int client_fd, const char *line)
         log_message("INFO", "Report saved for file: %s", safe_name);
     }
 
-    analyzed_files++;
-
-    written = snprintf(last_file, sizeof(last_file), "%s", safe_name);
-    if (written < 0 || (size_t)written >= sizeof(last_file))
-    {
-        (void)snprintf(last_file, sizeof(last_file), "unknown");
-    }
+    update_stats(safe_name);
 
     log_message("INFO", "Analysis completed for file: %s", safe_name);
 
@@ -940,11 +994,41 @@ static void handle_client(int client_fd)
     }
 }
 
+/*
+  Curata procesele copil terminate ca sa nu ramana zombie processes.
+*/
+static void reap_finished_children(int signal_number)
+{
+    int saved_errno = errno;
+
+    (void)signal_number;
+
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+    {
+        ;
+    }
+
+    errno = saved_errno;
+}
+
 int main(void)
 {
     (void)ensure_dir("uploads");
     (void)ensure_dir("reports");
     (void)ensure_dir("logs");
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+
+    sa.sa_handler = reap_finished_children;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+
+    if (sigaction(SIGCHLD, &sa, NULL) == -1)
+    {
+        perror("sigaction");
+        return 1;
+    }
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0)
@@ -985,7 +1069,7 @@ int main(void)
     printf("Server running on %s:%d\n", SERVER_IP, SERVER_PORT);
     printf("Waiting for clients...\n");
 
-    log_message("INFO", "Server started on %s:%d", SERVER_IP, SERVER_PORT);
+    log_message("INFO", "Concurrent server started on %s:%d", SERVER_IP, SERVER_PORT);
 
     while (1)
     {
@@ -1001,15 +1085,50 @@ int main(void)
             continue;
         }
 
-        printf("Client connected.\n");
-        log_message("INFO", "Client connected");
+        pid_t pid = fork();
 
-        handle_client(client_fd);
+        if (pid < 0)
+        {
+            perror("fork");
+            log_message("ERROR", "fork failed for client connection");
+            (void)close(client_fd);
+            continue;
+        }
+
+        if (pid == 0)
+{
+    struct sigaction child_sa;
+    memset(&child_sa, 0, sizeof(child_sa));
+
+    child_sa.sa_handler = SIG_DFL;
+    sigemptyset(&child_sa.sa_mask);
+    child_sa.sa_flags = 0;
+
+    if (sigaction(SIGCHLD, &child_sa, NULL) == -1)
+    {
+        perror("sigaction child");
+        (void)close(client_fd);
+        (void)close(server_fd);
+        _exit(1);
+    }
+
+    (void)close(server_fd);
+
+    printf("Client connected.\n");
+    log_message("INFO", "Client connected in child process");
+
+    handle_client(client_fd);
+
+    (void)close(client_fd);
+
+    printf("Client disconnected.\n");
+    log_message("INFO", "Client disconnected from child process");
+
+    fflush(stdout);
+    _exit(0);
+}
 
         (void)close(client_fd);
-
-        printf("Client disconnected.\n");
-        log_message("INFO", "Client disconnected");
     }
 
     (void)close(server_fd);
