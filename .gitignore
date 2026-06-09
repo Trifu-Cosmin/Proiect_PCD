@@ -21,3 +21,8 @@ downloads/*
 
 downloads_py/*
 !downloads_py/.gitkeep
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
