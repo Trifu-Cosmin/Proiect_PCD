@@ -1,0 +1,355 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[romanian]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+colorlinks=true,
+linkcolor=blue,
+urlcolor=blue
+}
+
+\lstset{
+basicstyle=\ttfamily\small,
+breaklines=true,
+frame=single,
+columns=fullflexible
+}
+
+\title{PCD T17 -- Semantic Analyzer for Source Code}
+\author{Echipa proiect PCD}
+\date{2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Descriere generala}
+
+Acest proiect este realizat pentru materia Programare Concurenta si Distribuita si are ca tema T17 -- Analiza Semantica Cod Sursa.
+
+Aplicatia implementeaza un sistem client-server in C, care permite trimiterea de fisiere sursa C catre un server. Serverul salveaza fisierele primite, porneste procesul de analiza semantica si genereaza rapoarte text cu rezultatele obtinute.
+
+Analiza codului este realizata folosind biblioteca \texttt{libclang}. Aceasta permite parsarea fisierelor C si extragerea unor informatii precum:
+\begin{itemize}
+\item numarul de diagnostice;
+\item erori si warning-uri;
+\item numarul de functii;
+\item numarul de variabile;
+\item numarul de instructiuni \texttt{if};
+\item numarul de bucle \texttt{for};
+\item numarul de bucle \texttt{while}.
+\end{itemize}
+
+Proiectul include si un client de administrare, un client normal in C si un client alternativ in Python.
+
+\section{Componentele proiectului}
+
+Proiectul este impartit in mai multe componente:
+
+\begin{itemize}
+\item \texttt{server} -- server TCP concurent;
+\item \texttt{client} -- client normal in C;
+\item \texttt{admin\_client} -- client de administrare;
+\item \texttt{analyzer} -- modul de analiza semantica bazat pe \texttt{libclang};
+\item \texttt{python\_client/client.py} -- client alternativ in Python;
+\item \texttt{tests/} -- fisiere sursa folosite pentru testare;
+\item \texttt{config/} -- fisiere de configurare;
+\item \texttt{docs/} -- documentatia proiectului.
+\end{itemize}
+
+\section{Structura proiectului}
+
+\begin{lstlisting}
+.
++-- Makefile
++-- README.tex
++-- config
+|   +-- app.cfg
+|   `-- users.cfg
++-- docs
+|   +-- SRS_SDD.tex
+|   +-- openapi.yaml
+|   `-- protocol.tex
++-- python_client
+|   `-- client.py
++-- src
+|   +-- admin_client.c
+|   +-- analyzer.c
+|   +-- client.c
+|   +-- main.c
+|   `-- server.c
++-- tests
+|   +-- bad.c
+|   +-- bad_syntax.c
+|   +-- bad_type.c
+|   +-- bad_uninitialized.c
+|   +-- good_math.c
+|   +-- good_nested.c
+|   +-- good_while.c
+|   `-- sample.c
++-- uploads
++-- reports
++-- downloads
++-- downloads_py
+`-- logs
+\end{lstlisting}
+
+Folderele \texttt{uploads}, \texttt{reports}, \texttt{downloads}, \texttt{downloads\_py} si \texttt{logs} sunt folosite pentru fisiere generate in timpul rularii aplicatiei.
+
+\section{Cerinte software}
+
+Pentru compilare si rulare sunt necesare:
+
+\begin{itemize}
+\item sistem Linux sau WSL;
+\item \texttt{gcc};
+\item \texttt{make};
+\item \texttt{libclang};
+\item \texttt{libconfig};
+\item \texttt{python3}, pentru clientul alternativ.
+\end{itemize}
+
+Pe Ubuntu/WSL, pachetele pot fi instalate cu:
+
+\begin{lstlisting}
+sudo apt update
+sudo apt install build-essential make clang libclang-dev libconfig-dev python3
+\end{lstlisting}
+
+In implementarea curenta, Makefile-ul foloseste LLVM 18:
+
+\begin{lstlisting}
+-I/usr/lib/llvm-18/include
+-L/usr/lib/llvm-18/lib
+-lclang
+-lconfig
+\end{lstlisting}
+
+Daca versiunea de LLVM difera, trebuie ajustate caile din Makefile.
+
+\section{Compilare}
+
+Pentru compilarea intregului proiect:
+
+\begin{lstlisting}
+make clean
+make
+\end{lstlisting}
+
+Comanda \texttt{make} genereaza urmatoarele executabile:
+
+\begin{itemize}
+\item \texttt{server};
+\item \texttt{client};
+\item \texttt{admin\_client};
+\item \texttt{analyzer};
+\item \texttt{main}.
+\end{itemize}
+
+Compilarea se face cu optiuni stricte:
+
+\begin{lstlisting}
+-Wall -Wextra -Werror -pedantic -std=c11
+\end{lstlisting}
+
+\section{Rulare server}
+
+Serverul se porneste cu:
+
+\begin{lstlisting}
+./server
+\end{lstlisting}
+
+Serverul ruleaza pe adresa:
+
+\begin{lstlisting}
+127.0.0.1:8080
+\end{lstlisting}
+
+Serverul primeste conexiuni de la clienti, autentifica utilizatorii, salveaza fisierele in \texttt{uploads/}, ruleaza analiza si genereaza rapoarte in \texttt{reports/}.
+
+\section{Rulare client normal}
+
+Clientul normal poate trimite un fisier sursa catre server:
+
+\begin{lstlisting}
+./client tests/sample.c
+\end{lstlisting}
+
+Exemplu pentru un fisier cu eroare:
+
+\begin{lstlisting}
+./client tests/bad_type.c
+\end{lstlisting}
+
+Rezultatul analizei este afisat in terminal si salvat ca raport in folderul \texttt{reports/}.
+
+\section{Rulare client Python}
+
+Clientul Python ofera o varianta alternativa de client, intr-un alt limbaj.
+
+Pentru upload:
+
+\begin{lstlisting}
+python3 python_client/client.py upload tests/sample.c
+\end{lstlisting}
+
+Pentru download raport:
+
+\begin{lstlisting}
+python3 python_client/client.py download sample_report.txt
+\end{lstlisting}
+
+Fisierele descarcate de clientul Python sunt salvate in \texttt{downloads\_py/}.
+
+\section{Rulare client admin}
+
+Clientul de administrare se porneste cu:
+
+\begin{lstlisting}
+./admin_client
+\end{lstlisting}
+
+Meniul permite urmatoarele actiuni:
+
+\begin{itemize}
+\item afisarea statisticilor serverului;
+\item afisarea logurilor;
+\item listarea fisierelor uploadate;
+\item listarea rapoartelor generate;
+\item inchiderea clientului.
+\end{itemize}
+
+Exemplu de meniu:
+
+\begin{lstlisting}
+=== Admin Client ===
+
+1. Server stats
+2. Show server logs
+3. List uploaded files
+4. List reports
+5. Quit
+   \end{lstlisting}
+
+\section{Fisiere de test}
+
+Folderul \texttt{tests/} contine fisiere folosite pentru demonstrarea functionalitatilor:
+
+\begin{longtable}{|p{5cm}|p{9cm}|}
+\hline
+\textbf{Fisier} & \textbf{Descriere} \ \\
+\hline
+\texttt{sample.c} & fisier simplu, fara erori \ \\
+\hline
+\texttt{bad.c} & fisier cu problema semantica \ \\
+\hline
+\texttt{bad\_syntax.c} & fisier cu eroare detectata la parsare \ \\
+\hline
+\texttt{bad\_type.c} & fisier cu eroare de tip \ \\
+\hline
+\texttt{bad\_uninitialized.c} & fisier cu variabila neinitializata \ \\
+\hline
+\texttt{good\_math.c} & fisier valid cu functii si bucle \ \\
+\hline
+\texttt{good\_nested.c} & fisier valid cu structuri \texttt{if} imbricate \ \\
+\hline
+\texttt{good\_while.c} & fisier valid cu bucla \texttt{while} \ \\
+\hline
+\end{longtable}
+
+\section{Exemplu de rezultat}
+
+Pentru rularea:
+
+\begin{lstlisting}
+./client tests/sample.c
+\end{lstlisting}
+
+se poate obtine un rezultat de forma:
+
+\begin{lstlisting}
+=== Analysis Result ===
+Project: PCD T17 Semantic Analyzer
+Source file: uploads/sample.c
+Diagnostics count: 0
+Functions count: 3
+Variables count: 8
+If statements count: 1
+For loops count: 1
+While loops count: 0
+
+=== Diagnostics ===
+Nu exista diagnostice.
+
+Parse completed.
+\end{lstlisting}
+
+\section{Test de concurenta}
+
+Serverul poate procesa mai multi clienti. Un test simplu se poate face astfel:
+
+\begin{lstlisting}
+./client tests/sample.c & ./client tests/bad_type.c & wait
+\end{lstlisting}
+
+Dupa rulare, rapoartele trebuie sa apara in folderul \texttt{reports/}.
+
+\section{Curatare proiect}
+
+Pentru curatarea executabilelor:
+
+\begin{lstlisting}
+make clean
+\end{lstlisting}
+
+Folderul \texttt{uploads/} poate fi sters automat de Makefile. Folderele generate sunt ignorate prin \texttt{.gitignore}, dar sunt pastrate in repository prin fisiere \texttt{.gitkeep}.
+
+\section{Scenariu recomandat pentru demo}
+
+Un demo complet poate fi facut cu urmatorii pasi:
+
+\begin{lstlisting}
+make clean
+make
+./server
+\end{lstlisting}
+
+Intr-un alt terminal:
+
+\begin{lstlisting}
+./client tests/sample.c
+./client tests/bad_type.c
+python3 python_client/client.py upload tests/good_while.c
+python3 python_client/client.py download good_while_report.txt
+./admin_client
+\end{lstlisting}
+
+Acest scenariu demonstreaza:
+\begin{itemize}
+\item compilarea fara warning-uri;
+\item server TCP functional;
+\item client C functional;
+\item client Python functional;
+\item analiza semantica prin \texttt{libclang};
+\item generare de rapoarte;
+\item client admin;
+\item loguri si statistici.
+\end{itemize}
+
+\section{Concluzie}
+
+Proiectul implementeaza o aplicatie distribuita simpla, dar completa, pentru analiza semantica de cod sursa. Aplicatia foloseste socket-uri TCP, procese, fisiere de configurare, loguri, client normal, client admin si client Python. Partea de analiza este realizata cu \texttt{libclang}, iar rezultatele sunt salvate si transmise clientului sub forma de rapoarte text.
+
+\end{document}
+pdflatex README.tex

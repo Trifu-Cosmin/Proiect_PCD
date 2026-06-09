@@ -1,0 +1,361 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[romanian]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+colorlinks=true,
+linkcolor=blue,
+urlcolor=blue
+}
+
+\lstset{
+basicstyle=\ttfamily\small,
+breaklines=true,
+frame=single,
+columns=fullflexible
+}
+
+\title{Protocol de Comunicare -- PCD T17 Semantic Analyzer}
+\author{Echipa proiect PCD}
+\date{2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Scopul documentului}
+
+Acest document descrie protocolul de comunicare folosit in cadrul proiectului PCD T17 -- Semantic Analyzer for Source Code.
+
+Protocolul este folosit pentru comunicarea dintre:
+\begin{itemize}
+\item serverul TCP;
+\item clientul normal in C;
+\item clientul admin in C;
+\item clientul alternativ in Python.
+\end{itemize}
+
+Aplicatia ruleaza local, folosind socket-uri INET peste TCP.
+
+\section{Informatii generale}
+
+Serverul asculta conexiuni pe:
+
+\begin{lstlisting}
+Host: 127.0.0.1
+Port: 8080
+Protocol: TCP
+\end{lstlisting}
+
+Fiecare client se conecteaza la server, trimite o cerere, primeste raspunsul si apoi conexiunea este inchisa sau continuata, in functie de tipul de client si operatie.
+
+Serverul proceseaza conexiunile in mod concurent, folosind procese copil pentru clienti.
+
+\section{Rolurile aplicatiei}
+
+\subsection{Client normal}
+
+Clientul normal este folosit pentru:
+\begin{itemize}
+\item autentificare ca utilizator obisnuit;
+\item trimiterea unui fisier sursa catre server;
+\item primirea rezultatului analizei;
+\item descarcarea unui raport generat anterior.
+\end{itemize}
+
+\subsection{Client admin}
+
+Clientul admin este folosit pentru:
+\begin{itemize}
+\item afisarea statisticilor serverului;
+\item afisarea logurilor;
+\item listarea fisierelor uploadate;
+\item listarea rapoartelor generate.
+\end{itemize}
+
+\subsection{Client Python}
+
+Clientul Python ofera o varianta alternativa de client, implementata intr-un alt limbaj. Acesta poate trimite fisiere pentru analiza si poate descarca rapoarte.
+
+\section{Autentificare}
+
+La inceputul comunicarii, clientul trimite datele de autentificare catre server.
+
+Credentialele sunt verificate folosind fisierul:
+
+\begin{lstlisting}
+config/users.cfg
+\end{lstlisting}
+
+Un utilizator poate avea rol de:
+\begin{itemize}
+\item \texttt{user};
+\item \texttt{admin}.
+\end{itemize}
+
+Serverul valideaza datele si permite accesul la operatii in functie de rol.
+
+\section{Model general de comunicare}
+
+Modelul general este:
+
+\begin{lstlisting}
+Client -> Server: cerere
+Server -> Client: raspuns
+\end{lstlisting}
+
+Pentru operatiile care implica fisiere:
+
+\begin{lstlisting}
+Client -> Server: metadate fisier
+Client -> Server: continut fisier
+Server -> Analyzer: fisier salvat
+Analyzer -> Server: raport generat
+Server -> Client: rezultat analiza
+\end{lstlisting}
+
+\section{Operatii client normal}
+
+\subsection{Upload fisier}
+
+Clientul trimite un fisier sursa catre server.
+
+Exemplu comanda:
+
+\begin{lstlisting}
+./client tests/sample.c
+\end{lstlisting}
+
+Pasi:
+\begin{enumerate}
+\item clientul se conecteaza la server;
+\item clientul se autentifica;
+\item clientul trimite numele fisierului;
+\item clientul trimite dimensiunea fisierului;
+\item clientul trimite continutul fisierului;
+\item serverul salveaza fisierul in \texttt{uploads/};
+\item serverul ruleaza analyzer-ul;
+\item serverul salveaza raportul in \texttt{reports/};
+\item serverul trimite rezultatul catre client.
+\end{enumerate}
+
+\subsection{Download raport}
+
+Clientul poate cere descarcarea unui raport deja generat.
+
+Exemplu conceptual:
+
+\begin{lstlisting}
+download sample_report.txt
+\end{lstlisting}
+
+Pasi:
+\begin{enumerate}
+\item clientul trimite numele raportului;
+\item serverul cauta raportul in \texttt{reports/};
+\item serverul trimite continutul raportului;
+\item clientul salveaza raportul in \texttt{downloads/}.
+\end{enumerate}
+
+\section{Operatii client Python}
+
+Clientul Python foloseste doua operatii principale.
+
+\subsection{Upload}
+
+\begin{lstlisting}
+python3 python_client/client.py upload tests/sample.c
+\end{lstlisting}
+
+Operatia trimite fisierul catre server si primeste rezultatul analizei.
+
+\subsection{Download}
+
+\begin{lstlisting}
+python3 python_client/client.py download sample_report.txt
+\end{lstlisting}
+
+Operatia descarca raportul din server si il salveaza in \texttt{downloads\_py/}.
+
+\section{Operatii admin}
+
+Clientul admin trimite cereri speciale catre server. Aceste cereri sunt disponibile doar pentru utilizatorii cu rol de admin.
+
+\subsection{STATS}
+
+Cererea \texttt{STATS} returneaza informatii despre server.
+
+Exemplu raspuns:
+
+\begin{lstlisting}
+Server status: running
+Analyzed files: 15
+Last file: bad_type.c
+\end{lstlisting}
+
+\subsection{LOGS}
+
+Cererea \texttt{LOGS} returneaza continutul fisierului de log:
+
+\begin{lstlisting}
+logs/server.log
+\end{lstlisting}
+
+Exemplu de linii din log:
+
+\begin{lstlisting}
+[2026-06-09 12:48:59] INFO File uploaded: sample.c
+[2026-06-09 12:48:59] INFO Report saved for file: sample.c
+[2026-06-09 12:48:59] INFO Analysis completed for file: sample.c
+\end{lstlisting}
+
+\subsection{LIST UPLOADS}
+
+Aceasta cerere listeaza fisierele existente in:
+
+\begin{lstlisting}
+uploads/
+\end{lstlisting}
+
+Exemplu raspuns:
+
+\begin{lstlisting}
+Uploaded files:
+
+* bad_type.c
+* sample.c
+  \end{lstlisting}
+
+\subsection{LIST REPORTS}
+
+Aceasta cerere listeaza rapoartele existente in:
+
+\begin{lstlisting}
+reports/
+\end{lstlisting}
+
+Exemplu raspuns:
+
+\begin{lstlisting}
+Generated reports:
+
+* sample_report.txt
+* bad_type_report.txt
+  \end{lstlisting}
+
+\section{Formatul rapoartelor}
+
+Rapoartele generate de analyzer au format text.
+
+Exemplu:
+
+\begin{lstlisting}
+=== Analysis Result ===
+Project: PCD T17 Semantic Analyzer
+Source file: uploads/sample.c
+Diagnostics count: 0
+Functions count: 3
+Variables count: 8
+If statements count: 1
+For loops count: 1
+While loops count: 0
+
+=== Diagnostics ===
+Nu exista diagnostice.
+
+Parse completed.
+\end{lstlisting}
+
+Pentru fisiere cu probleme, raportul contine diagnostice de tip warning sau error:
+
+\begin{lstlisting}
+uploads/bad_type.c:10:9: error: incompatible pointer to integer conversion
+\end{lstlisting}
+
+\section{Coduri de raspuns}
+
+Protocolul foloseste raspunsuri text simple. Cele mai importante categorii sunt:
+
+\begin{longtable}{|p{4cm}|p{10cm}|}
+\hline
+\textbf{Raspuns} & \textbf{Semnificatie} \ \\
+\hline
+\texttt{OK} & operatia s-a realizat cu succes \ \\
+\hline
+\texttt{ERROR} & a aparut o eroare \ \\
+\hline
+\texttt{AUTH OK} & autentificare reusita \ \\
+\hline
+\texttt{AUTH FAILED} & autentificare esuata \ \\
+\hline
+\texttt{BYE} & conexiunea este inchisa \ \\
+\hline
+\end{longtable}
+
+In implementare, raspunsurile pot include si text aditional, in functie de operatie.
+
+\section{Gestionarea erorilor}
+
+Serverul trateaza urmatoarele situatii:
+\begin{itemize}
+\item fisier inexistent;
+\item utilizator invalid;
+\item rol insuficient pentru operatii admin;
+\item eroare la salvarea fisierului;
+\item eroare la rularea analyzer-ului;
+\item raport inexistent;
+\item conexiune inchisa de client.
+\end{itemize}
+
+Erorile importante sunt scrise in \texttt{logs/server.log}.
+
+\section{Concurenta}
+
+Serverul proceseaza clientii folosind procese copil. La fiecare conexiune acceptata, serverul creeaza un proces separat pentru client.
+
+Flux general:
+
+\begin{lstlisting}
+server accepta conexiune
+server face fork()
+procesul copil gestioneaza clientul
+procesul parinte continua sa accepte alti clienti
+\end{lstlisting}
+
+Aceasta abordare permite procesarea mai multor clienti in paralel.
+
+\section{Exemplu test de concurenta}
+
+\begin{lstlisting}
+./client tests/sample.c & ./client tests/bad_type.c & wait
+\end{lstlisting}
+
+Daca serverul functioneaza corect, ambele fisiere sunt analizate si ambele rapoarte sunt generate.
+
+\section{Securitate si limitari}
+
+Protocolul este realizat pentru un proiect de laborator si ruleaza local. Autentificarea este simpla, pe baza fisierului \texttt{config/users.cfg}.
+
+Limitari:
+\begin{itemize}
+\item nu exista criptare TLS;
+\item parolele nu sunt gestionate la nivel de productie;
+\item nu exista baza de date;
+\item comunicarea este gandita pentru rulare locala pe Linux/WSL.
+\end{itemize}
+
+\section{Concluzie}
+
+Protocolul este simplu, text-based si potrivit pentru scopul proiectului. El permite autentificare, upload de fisiere, analiza semantica, generare de rapoarte, operatii de administrare si folosirea unui client alternativ in Python.
+
+\end{document}

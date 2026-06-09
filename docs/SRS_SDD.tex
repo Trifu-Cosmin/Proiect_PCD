@@ -1,0 +1,489 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[romanian]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+colorlinks=true,
+linkcolor=blue,
+urlcolor=blue
+}
+
+\lstset{
+basicstyle=\ttfamily\small,
+breaklines=true,
+frame=single,
+columns=fullflexible
+}
+
+\title{SRS si SDD -- PCD T17 Semantic Analyzer}
+\author{Echipa proiect PCD}
+\date{2026}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Introducere}
+
+Acest document contine specificatia cerintelor software (SRS) si descrierea designului software (SDD) pentru proiectul PCD T17 -- Semantic Analyzer for Source Code.
+
+Proiectul consta intr-o aplicatie client-server care permite analiza semantica a fisierelor sursa C. Clientul trimite fisierul catre server, serverul il salveaza, ruleaza un analyzer bazat pe \texttt{libclang} si trimite inapoi raportul rezultat.
+
+\section{Scopul proiectului}
+
+Scopul proiectului este realizarea unei aplicatii distribuite care combina:
+\begin{itemize}
+\item programarea cu socket-uri TCP;
+\item procese concurente;
+\item comunicarea client-server;
+\item autentificarea utilizatorilor;
+\item logarea operatiilor;
+\item analiza semantica de cod sursa;
+\item folosirea unei biblioteci externe.
+\end{itemize}
+
+Tema aleasa este T17 -- Analiza Semantica Cod Sursa.
+
+\section{Descriere generala}
+
+Aplicatia permite utilizatorilor sa trimita fisiere C catre server. Serverul analizeaza fisierul si genereaza un raport text. Raportul contine informatii despre diagnostice, functii, variabile si structuri de control.
+
+Sistemul include:
+\begin{itemize}
+\item server TCP in C;
+\item client normal in C;
+\item client admin in C;
+\item client alternativ in Python;
+\item modul analyzer in C;
+\item fisiere de configurare;
+\item loguri si rapoarte.
+\end{itemize}
+
+\section{Utilizatori}
+
+Sistemul are doua tipuri principale de utilizatori:
+
+\subsection{Utilizator normal}
+
+Un utilizator normal poate:
+\begin{itemize}
+\item sa se autentifice;
+\item sa trimita fisiere sursa pentru analiza;
+\item sa primeasca rezultatul analizei;
+\item sa descarce rapoarte.
+\end{itemize}
+
+\subsection{Administrator}
+
+Un administrator poate:
+\begin{itemize}
+\item sa vada statisticile serverului;
+\item sa vada logurile serverului;
+\item sa listeze fisierele uploadate;
+\item sa listeze rapoartele generate.
+\end{itemize}
+
+\section{Cerinte functionale}
+
+\subsection{FR1 -- Pornirea serverului}
+
+Serverul trebuie sa porneasca pe adresa \texttt{127.0.0.1} si portul \texttt{8080}.
+
+\subsection{FR2 -- Acceptarea conexiunilor}
+
+Serverul trebuie sa accepte conexiuni TCP de la clienti.
+
+\subsection{FR3 -- Concurenta}
+
+Serverul trebuie sa poata gestiona mai multi clienti prin procese separate.
+
+\subsection{FR4 -- Autentificare}
+
+Serverul trebuie sa autentifice utilizatorii folosind fisierul:
+
+\begin{lstlisting}
+config/users.cfg
+\end{lstlisting}
+
+\subsection{FR5 -- Upload fisier}
+
+Clientul normal trebuie sa poata trimite un fisier sursa C catre server.
+
+\subsection{FR6 -- Salvare fisier}
+
+Serverul trebuie sa salveze fisierele primite in folderul:
+
+\begin{lstlisting}
+uploads/
+\end{lstlisting}
+
+\subsection{FR7 -- Analiza semantica}
+
+Serverul trebuie sa ruleze analyzer-ul pentru fisierul primit.
+
+\subsection{FR8 -- Generare raport}
+
+Serverul trebuie sa genereze un raport text in folderul:
+
+\begin{lstlisting}
+reports/
+\end{lstlisting}
+
+\subsection{FR9 -- Returnare rezultat}
+
+Serverul trebuie sa trimita rezultatul analizei catre client.
+
+\subsection{FR10 -- Download raport}
+
+Clientul trebuie sa poata descarca un raport generat anterior.
+
+\subsection{FR11 -- Client admin}
+
+Clientul admin trebuie sa poata cere statistici, loguri, lista fisierelor uploadate si lista rapoartelor.
+
+\subsection{FR12 -- Client Python}
+
+Sistemul trebuie sa includa un client intr-un alt limbaj, in cazul acesta Python.
+
+\subsection{FR13 -- Logging}
+
+Serverul trebuie sa scrie actiunile importante in:
+
+\begin{lstlisting}
+logs/server.log
+\end{lstlisting}
+
+\section{Cerinte nefunctionale}
+
+\subsection{NFR1 -- Sistem de operare}
+
+Aplicatia este destinata rularii pe Linux sau WSL.
+
+\subsection{NFR2 -- Compilare stricta}
+
+Codul trebuie sa compileze fara warning-uri cu:
+
+\begin{lstlisting}
+-Wall -Wextra -Werror -pedantic -std=c11
+\end{lstlisting}
+
+\subsection{NFR3 -- Modularitate}
+
+Codul trebuie sa fie impartit in module clare:
+\begin{itemize}
+\item server;
+\item client;
+\item admin client;
+\item analyzer;
+\item client Python.
+\end{itemize}
+
+\subsection{NFR4 -- Simplitate}
+
+Protocolul de comunicare este text-based si usor de testat.
+
+\subsection{NFR5 -- Biblioteca externa}
+
+Aplicatia foloseste \texttt{libclang} pentru analiza codului sursa.
+
+\section{Arhitectura sistemului}
+
+Arhitectura generala este:
+
+\begin{lstlisting}
++-------------+        TCP        +-------------+
+| Client C    | --------------->  |             |
++-------------+                   |             |
+|   Server    | ---> Analyzer libclang
++-------------+        TCP        |             |
+| Admin C     | --------------->  |             |
++-------------+                   +-------------+
+|
++-------------+        TCP           |
+| Python      | ---------------------+
++-------------+
+\end{lstlisting}
+
+Serverul reprezinta componenta centrala. Toate cererile ajung la server, iar serverul decide ce operatie trebuie executata.
+
+\section{Design detaliat}
+
+\subsection{Server}
+
+Serverul are urmatoarele responsabilitati:
+\begin{itemize}
+\item creeaza socket TCP;
+\item face \texttt{bind};
+\item face \texttt{listen};
+\item accepta clienti;
+\item creeaza procese copil pentru clienti;
+\item autentifica utilizatorii;
+\item primeste fisiere;
+\item ruleaza analyzer-ul;
+\item trimite rezultate;
+\item scrie loguri.
+\end{itemize}
+
+\subsection{Client normal}
+
+Clientul normal are urmatoarele responsabilitati:
+\begin{itemize}
+\item se conecteaza la server;
+\item se autentifica;
+\item trimite fisierul sursa;
+\item primeste rezultatul analizei;
+\item afiseaza rezultatul in terminal.
+\end{itemize}
+
+\subsection{Client admin}
+
+Clientul admin ofera un meniu simplu:
+
+\begin{lstlisting}
+
+1. Server stats
+2. Show server logs
+3. List uploaded files
+4. List reports
+5. Quit
+   \end{lstlisting}
+
+\subsection{Analyzer}
+
+Analyzer-ul este responsabil cu analiza codului sursa. Acesta foloseste \texttt{libclang} pentru parsarea fisierului C.
+
+Analyzer-ul extrage:
+\begin{itemize}
+\item diagnostice;
+\item numar de functii;
+\item numar de variabile;
+\item numar de instructiuni \texttt{if};
+\item numar de bucle \texttt{for};
+\item numar de bucle \texttt{while}.
+\end{itemize}
+
+\subsection{Client Python}
+
+Clientul Python ofera doua operatii:
+\begin{itemize}
+\item \texttt{upload};
+\item \texttt{download}.
+\end{itemize}
+
+Exemple:
+
+\begin{lstlisting}
+python3 python_client/client.py upload tests/sample.c
+python3 python_client/client.py download sample_report.txt
+\end{lstlisting}
+
+\section{Fluxuri principale}
+
+\subsection{Flux upload si analiza}
+
+\begin{enumerate}
+\item Clientul se conecteaza la server.
+\item Clientul se autentifica.
+\item Clientul trimite fisierul sursa.
+\item Serverul salveaza fisierul in \texttt{uploads/}.
+\item Serverul ruleaza analyzer-ul.
+\item Analyzer-ul genereaza raportul.
+\item Serverul salveaza raportul in \texttt{reports/}.
+\item Serverul trimite raportul catre client.
+\end{enumerate}
+
+\subsection{Flux admin stats}
+
+\begin{enumerate}
+\item Adminul porneste clientul admin.
+\item Adminul alege optiunea \texttt{Server stats}.
+\item Clientul trimite cererea catre server.
+\item Serverul citeste statisticile.
+\item Serverul trimite raspunsul catre client.
+\end{enumerate}
+
+\subsection{Flux download raport}
+
+\begin{enumerate}
+\item Clientul cere un raport dupa nume.
+\item Serverul cauta raportul in \texttt{reports/}.
+\item Serverul trimite continutul raportului.
+\item Clientul salveaza raportul local.
+\end{enumerate}
+
+\section{Structuri de date si fisiere}
+
+\subsection{Fisiere de configurare}
+
+\begin{longtable}{|p{5cm}|p{9cm}|}
+\hline
+\textbf{Fisier} & \textbf{Rol} \ \\
+\hline
+\texttt{config/app.cfg} & configurare generala aplicatie \ \\
+\hline
+\texttt{config/users.cfg} & utilizatori si roluri \ \\
+\hline
+\end{longtable}
+
+\subsection{Foldere generate}
+
+\begin{longtable}{|p{5cm}|p{9cm}|}
+\hline
+\textbf{Folder} & \textbf{Rol} \ \\
+\hline
+\texttt{uploads/} & fisiere primite de la clienti \ \\
+\hline
+\texttt{reports/} & rapoarte generate \ \\
+\hline
+\texttt{downloads/} & rapoarte descarcate de clientul C \ \\
+\hline
+\texttt{downloads\_py/} & rapoarte descarcate de clientul Python \ \\
+\hline
+\texttt{logs/} & loguri si statistici server \ \\
+\hline
+\end{longtable}
+
+\section{Testare}
+
+\subsection{Compilare}
+
+\begin{lstlisting}
+make clean
+make
+\end{lstlisting}
+
+Rezultatul asteptat este compilarea fara warning-uri.
+
+\subsection{Test fisier valid}
+
+\begin{lstlisting}
+./client tests/sample.c
+\end{lstlisting}
+
+Rezultatul asteptat:
+\begin{itemize}
+\item diagnostice 0;
+\item raport generat;
+\item rezultat afisat clientului.
+\end{itemize}
+
+\subsection{Test fisier cu eroare de tip}
+
+\begin{lstlisting}
+./client tests/bad_type.c
+\end{lstlisting}
+
+Rezultatul asteptat:
+\begin{itemize}
+\item diagnostic de tip error;
+\item raport generat;
+\item eroarea afisata in rezultat.
+\end{itemize}
+
+\subsection{Test fisier cu warning}
+
+\begin{lstlisting}
+./client tests/bad_uninitialized.c
+\end{lstlisting}
+
+Rezultatul asteptat:
+\begin{itemize}
+\item diagnostic de tip warning;
+\item raport generat.
+\end{itemize}
+
+\subsection{Test concurenta}
+
+\begin{lstlisting}
+./client tests/sample.c & ./client tests/bad_type.c & wait
+\end{lstlisting}
+
+Rezultatul asteptat:
+\begin{itemize}
+\item ambele cereri sunt procesate;
+\item ambele rapoarte sunt generate;
+\item serverul continua sa ruleze.
+\end{itemize}
+
+\subsection{Test client Python}
+
+\begin{lstlisting}
+python3 python_client/client.py upload tests/good_while.c
+python3 python_client/client.py download good_while_report.txt
+\end{lstlisting}
+
+\subsection{Test admin}
+
+\begin{lstlisting}
+./admin_client
+\end{lstlisting}
+
+Se testeaza:
+\begin{itemize}
+\item stats;
+\item logs;
+\item list uploaded files;
+\item list reports.
+\end{itemize}
+
+\section{Impartirea muncii in echipa}
+
+Echipa are 5 membri. O impartire posibila a responsabilitatilor este:
+
+\begin{longtable}{|p{4cm}|p{10cm}|}
+\hline
+\textbf{Persoana} & \textbf{Responsabilitate} \ \\
+\hline
+Persoana 1 & server TCP si gestionarea conexiunilor \ \\
+\hline
+Persoana 2 & client normal si protocol de comunicare \ \\
+\hline
+Persoana 3 & analyzer \texttt{libclang} si generare rapoarte \ \\
+\hline
+Persoana 4 & admin client, loguri si statistici \ \\
+\hline
+Persoana 5 & client Python, teste si documentatie \ \\
+\hline
+\end{longtable}
+
+\section{Limitari}
+
+Aplicatia este realizata pentru scop educational si ruleaza local. Limitari:
+\begin{itemize}
+\item nu foloseste TLS;
+\item autentificarea este simpla, bazata pe fisier;
+\item nu foloseste baza de date;
+\item suportul este orientat spre fisiere C;
+\item analiza este limitata la metricile implementate.
+\end{itemize}
+
+\section{Posibile extensii}
+
+Aplicatia poate fi extinsa prin:
+\begin{itemize}
+\item suport mai bun pentru C++;
+\item calcularea complexitatii ciclomatice;
+\item afisare HTML pentru rapoarte;
+\item interfata web;
+\item stocare in baza de date;
+\item suport pentru mai multe limbaje de programare.
+\end{itemize}
+
+\section{Concluzie}
+
+Proiectul implementeaza o aplicatie client-server functionala pentru analiza semantica a codului sursa. Sistemul include server TCP concurent, client C, client admin, client Python, autentificare, loguri, rapoarte si analiza bazata pe \texttt{libclang}. Functionalitatile principale au fost testate pe mai multe fisiere sursa, atat valide, cat si cu erori.
+
+\end{document}
