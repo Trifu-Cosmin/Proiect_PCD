@@ -1,33 +1,5 @@
 #define _DEFAULT_SOURCE
 
-/*
-  Descriere:
-  Acest fisier implementeaza serverul TCP pentru proiectul T17.
-
-  Serverul:
-  - porneste pe 127.0.0.1:8080
-  - foloseste autentificare simpla prin config/users.cfg
-  - accepta conexiuni de la clienti
-  - trateaza clientii concurent folosind fork per client
-  - primeste fisiere sursa prin comanda UPLOAD
-  - salveaza fisierele primite in directorul uploads/
-  - ruleaza analyzer-ul intr-un proces separat folosind fork, exec si pipe
-  - trimite rezultatul analizei inapoi clientului
-  - salveaza raportul generat in directorul reports/
-  - permite descarcarea rapoartelor prin DOWNLOAD_REPORT
-  - scrie evenimente importante in logs/server.log
-  - raspunde la comenzi admin: STATS, LOGS, LIST_UPLOADS, LIST_REPORTS
-
-  Protocol simplificat:
-    LOGIN <username> <password>
-    UPLOAD <filename> <size>
-    DOWNLOAD_REPORT <report_name>
-    STATS
-    LOGS
-    LIST_UPLOADS
-    LIST_REPORTS
-*/
-
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
@@ -60,10 +32,8 @@
 #define MAX_ROLE 32
 
 #define STATS_FILE "logs/stats.txt"
+#define JOBS_FILE "logs/jobs.log"
 
-/*
-  Creeaza un director daca nu exista deja.
-*/
 static int ensure_dir(const char *dirname)
 {
     if (mkdir(dirname, 0755) == -1)
@@ -77,9 +47,6 @@ static int ensure_dir(const char *dirname)
     return 0;
 }
 
-/*
-  Scrie un mesaj in logs/server.log.
-*/
 static void log_message(const char *level, const char *format, ...)
 {
     if (ensure_dir("logs") != 0)
@@ -122,9 +89,6 @@ static void log_message(const char *level, const char *format, ...)
     fclose(file);
 }
 
-/*
-  Trimite tot bufferul prin socket.
-*/
 static int send_all(int sockfd, const void *buffer, size_t length)
 {
     const char *data = (const char *)buffer;
@@ -145,9 +109,6 @@ static int send_all(int sockfd, const void *buffer, size_t length)
     return 0;
 }
 
-/*
-  Primeste exact length bytes din socket.
-*/
 static int recv_all(int sockfd, void *buffer, size_t length)
 {
     char *data = (char *)buffer;
@@ -168,9 +129,6 @@ static int recv_all(int sockfd, void *buffer, size_t length)
     return 0;
 }
 
-/*
-  Citeste o linie din socket pana la '\n'.
-*/
 static int recv_line(int sockfd, char *buffer, size_t max_len)
 {
     size_t index = 0;
@@ -203,9 +161,6 @@ static int recv_line(int sockfd, char *buffer, size_t max_len)
     return (int)index;
 }
 
-/*
-  Intoarce doar numele fisierului dintr-o cale.
-*/
 static const char *get_basename(const char *path)
 {
     const char *last_slash = strrchr(path, '/');
@@ -218,10 +173,6 @@ static const char *get_basename(const char *path)
     return last_slash + 1;
 }
 
-/*
-  Creeaza numele fara extensie.
-  Exemplu: sample.c -> sample
-*/
 static void make_file_stem(const char *filename, char *stem, size_t stem_size)
 {
     int written = snprintf(stem, stem_size, "%s", filename);
@@ -242,9 +193,6 @@ static void make_file_stem(const char *filename, char *stem, size_t stem_size)
     }
 }
 
-/*
-  Scrie un text intr-un fisier.
-*/
 static int write_text_file(const char *path, const char *text)
 {
     FILE *file = fopen(path, "w");
@@ -266,9 +214,6 @@ static int write_text_file(const char *path, const char *text)
     return 0;
 }
 
-/*
-  Salveaza rezultatul analizei in reports/<nume>_report.txt.
-*/
 static int save_report(const char *filename, const char *analysis_result)
 {
     if (ensure_dir("reports") != 0)
@@ -295,9 +240,6 @@ static int save_report(const char *filename, const char *analysis_result)
     return write_text_file(report_path, analysis_result);
 }
 
-/*
-  Adauga text intr-un buffer.
-*/
 static int append_text(char *buffer, size_t buffer_size, size_t *used, const char *format, ...)
 {
     if (*used >= buffer_size)
@@ -328,11 +270,6 @@ static int append_text(char *buffer, size_t buffer_size, size_t *used, const cha
     return 0;
 }
 
-/*
-  Trimite raspuns de forma:
-    RESULT <size>
-    <payload>
-*/
 static int send_result_response(int client_fd, const char *text)
 {
     char header[MAX_LINE];
@@ -357,12 +294,6 @@ static int send_result_response(int client_fd, const char *text)
     return 0;
 }
 
-/*
-  Citeste statisticile persistente din logs/stats.txt.
-
-  Pentru server concurent nu mai folosim variabile globale pentru statistici,
-  deoarece fiecare copil are propria copie dupa fork.
-*/
 static void read_stats(unsigned *count, char *last_file, size_t last_file_size)
 {
     *count = 0;
@@ -390,9 +321,6 @@ static void read_stats(unsigned *count, char *last_file, size_t last_file_size)
     fclose(file);
 }
 
-/*
-  Scrie statisticile in logs/stats.txt.
-*/
 static int write_stats(unsigned count, const char *last_file)
 {
     if (ensure_dir("logs") != 0)
@@ -412,9 +340,6 @@ static int write_stats(unsigned count, const char *last_file)
     return 0;
 }
 
-/*
-  Actualizeaza statisticile dupa o analiza reusita.
-*/
 static void update_stats(const char *filename)
 {
     unsigned count = 0;
@@ -429,12 +354,6 @@ static void update_stats(const char *filename)
     }
 }
 
-/*
-  Verifica username/parola in config/users.cfg.
-
-  Format fisier:
-    username:password:role
-*/
 static int authenticate_user(const char *username, const char *password, char *role, size_t role_size)
 {
     FILE *file = fopen("config/users.cfg", "r");
@@ -476,25 +395,16 @@ static int authenticate_user(const char *username, const char *password, char *r
     return 0;
 }
 
-/*
-  Verifica daca un rol este admin.
-*/
 static int is_admin_role(const char *role)
 {
     return strcmp(role, "admin") == 0;
 }
 
-/*
-  Verifica daca un rol este user sau admin.
-*/
 static int is_normal_or_admin_role(const char *role)
 {
     return strcmp(role, "user") == 0 || strcmp(role, "admin") == 0;
 }
 
-/*
-  Proceseaza comanda LOGIN.
-*/
 static int handle_login(int client_fd, const char *line, char *role, size_t role_size)
 {
     char username[MAX_USER];
@@ -524,9 +434,6 @@ static int handle_login(int client_fd, const char *line, char *role, size_t role
     return send_result_response(client_fd, response);
 }
 
-/*
-  Ruleaza analyzer-ul intr-un proces separat.
-*/
 static int run_analyzer(const char *filepath, char *result, size_t result_size)
 {
     int pipefd[2];
@@ -607,12 +514,6 @@ static int run_analyzer(const char *filepath, char *result, size_t result_size)
     return 0;
 }
 
-/*
-  Trimite un fisier catre client.
-  Format raspuns:
-    FILE <filename> <size>
-    <file_bytes>
-*/
 static int send_file_response(int client_fd, const char *filepath, const char *filename)
 {
     FILE *file = fopen(filepath, "rb");
@@ -668,9 +569,6 @@ static int send_file_response(int client_fd, const char *filepath, const char *f
     return 0;
 }
 
-/*
-  Raspunde la comanda STATS.
-*/
 static int handle_stats(int client_fd)
 {
     unsigned count = 0;
@@ -695,9 +593,6 @@ static int handle_stats(int client_fd)
     return send_result_response(client_fd, stats);
 }
 
-/*
-  Raspunde la comanda LOGS.
-*/
 static int handle_logs(int client_fd)
 {
     FILE *file = fopen("logs/server.log", "r");
@@ -717,9 +612,6 @@ static int handle_logs(int client_fd)
     return send_result_response(client_fd, logs);
 }
 
-/*
-  Listeaza fisierele dintr-un director.
-*/
 static int handle_list_directory(int client_fd, const char *dirname, const char *title)
 {
     if (ensure_dir(dirname) != 0)
@@ -770,9 +662,181 @@ static int handle_list_directory(int client_fd, const char *dirname, const char 
     return send_result_response(client_fd, response);
 }
 
-/*
-  Proceseaza comanda DOWNLOAD_REPORT.
-*/
+static void append_job_status(const char *filename, const char *status)
+{
+    if (ensure_dir("logs") != 0)
+    {
+        return;
+    }
+
+    FILE *file = fopen(JOBS_FILE, "a");
+    if (file == NULL)
+    {
+        return;
+    }
+
+    time_t now = time(NULL);
+    struct tm *local_time = localtime(&now);
+
+    if (local_time != NULL)
+    {
+        fprintf(file,
+                "[%04d-%02d-%02d %02d:%02d:%02d] %s %s\n",
+                local_time->tm_year + 1900,
+                local_time->tm_mon + 1,
+                local_time->tm_mday,
+                local_time->tm_hour,
+                local_time->tm_min,
+                local_time->tm_sec,
+                filename,
+                status);
+    }
+    else
+    {
+        fprintf(file, "[unknown-time] %s %s\n", filename, status);
+    }
+
+    fclose(file);
+}
+
+static int handle_server_status(int client_fd)
+{
+    char response[MAX_RESULT];
+
+    int written = snprintf(response,
+                           sizeof(response),
+                           "Server status: running\n"
+                           "INET socket: %s:%d\n"
+                           "UNIX admin socket: %s\n"
+                           "Connection model: select() + fork() per client\n"
+                           "Normal clients: C client and Python client over INET TCP\n"
+                           "Admin client: UNIX domain socket\n",
+                           SERVER_IP,
+                           SERVER_PORT,
+                           ADMIN_SOCKET_PATH);
+
+    if (written < 0 || (size_t)written >= sizeof(response))
+    {
+        return -1;
+    }
+
+    log_message("INFO", "Admin requested SERVER_STATUS");
+    return send_result_response(client_fd, response);
+}
+
+static int handle_clear_logs(int client_fd)
+{
+    if (ensure_dir("logs") != 0)
+    {
+        return send_result_response(client_fd, "ERROR: cannot access logs directory\n");
+    }
+
+    FILE *file = fopen("logs/server.log", "w");
+    if (file == NULL)
+    {
+        return send_result_response(client_fd, "ERROR: cannot clear logs\n");
+    }
+
+    fclose(file);
+
+    log_message("INFO", "Admin cleared server logs");
+    return send_result_response(client_fd, "Server logs cleared.\n");
+}
+
+static int handle_delete_report(int client_fd, const char *line)
+{
+    char report_name[MAX_FILENAME];
+
+    if (sscanf(line, "DELETE_REPORT %255s", report_name) != 1)
+    {
+        return send_result_response(client_fd, "ERROR: invalid DELETE_REPORT command\n");
+    }
+
+    const char *safe_name = get_basename(report_name);
+
+    char report_path[MAX_PATH];
+    int written = snprintf(report_path, sizeof(report_path), "reports/%s", safe_name);
+    if (written < 0 || (size_t)written >= sizeof(report_path))
+    {
+        return send_result_response(client_fd, "ERROR: report name too long\n");
+    }
+
+    if (unlink(report_path) != 0)
+    {
+        return send_result_response(client_fd, "ERROR: cannot delete report\n");
+    }
+
+    log_message("INFO", "Admin deleted report: %s", safe_name);
+    return send_result_response(client_fd, "Report deleted.\n");
+}
+
+static int handle_list_users(int client_fd)
+{
+    FILE *file = fopen("config/users.cfg", "r");
+    if (file == NULL)
+    {
+        return send_result_response(client_fd, "ERROR: cannot open config/users.cfg\n");
+    }
+
+    char response[MAX_RESULT];
+    size_t used = 0;
+    unsigned count = 0;
+    char line[MAX_LINE];
+
+    response[0] = '\0';
+    (void)append_text(response, sizeof(response), &used, "Configured users:\n");
+
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        char username[MAX_USER];
+        char password[MAX_PASS];
+        char role[MAX_ROLE];
+
+        line[strcspn(line, "\n")] = '\0';
+
+        if (line[0] == '\0' || line[0] == '#')
+        {
+            continue;
+        }
+
+        if (sscanf(line, "%63[^:]:%63[^:]:%31s", username, password, role) == 3)
+        {
+            (void)password;
+            (void)append_text(response, sizeof(response), &used, "- %s : %s\n", username, role);
+            count++;
+        }
+    }
+
+    fclose(file);
+
+    if (count == 0U)
+    {
+        (void)append_text(response, sizeof(response), &used, "(no users found)\n");
+    }
+
+    log_message("INFO", "Admin requested LIST_USERS");
+    return send_result_response(client_fd, response);
+}
+
+static int handle_jobs(int client_fd)
+{
+    FILE *file = fopen(JOBS_FILE, "r");
+    if (file == NULL)
+    {
+        return send_result_response(client_fd, "No analysis jobs available.\n");
+    }
+
+    char response[MAX_RESULT];
+    size_t read_count = fread(response, 1, sizeof(response) - 1U, file);
+
+    fclose(file);
+
+    response[read_count] = '\0';
+
+    log_message("INFO", "Admin requested JOBS");
+    return send_result_response(client_fd, response);
+}
+
 static int handle_download_report(int client_fd, const char *line)
 {
     char report_name[MAX_FILENAME];
@@ -797,9 +861,6 @@ static int handle_download_report(int client_fd, const char *line)
     return send_file_response(client_fd, report_path, safe_name);
 }
 
-/*
-  Proceseaza comanda UPLOAD.
-*/
 static int handle_upload(int client_fd, const char *line)
 {
     char filename[MAX_FILENAME];
@@ -868,11 +929,15 @@ static int handle_upload(int client_fd, const char *line)
     }
 
     log_message("INFO", "File uploaded: %s (%zu bytes)", safe_name, file_size);
+    append_job_status(safe_name, "QUEUED");
 
     char analysis_result[MAX_RESULT];
 
+    append_job_status(safe_name, "RUNNING");
+
     if (run_analyzer(saved_path, analysis_result, sizeof(analysis_result)) != 0)
     {
+        append_job_status(safe_name, "FAILED");
         log_message("ERROR", "Analyzer failed for file: %s", saved_path);
         return send_result_response(client_fd, "ERROR: analyzer failed\n");
     }
@@ -887,16 +952,30 @@ static int handle_upload(int client_fd, const char *line)
     }
 
     update_stats(safe_name);
+    append_job_status(safe_name, "DONE");
 
     log_message("INFO", "Analysis completed for file: %s", safe_name);
 
     return send_result_response(client_fd, analysis_result);
 }
 
-/*
-  Proceseaza o conexiune client.
-  Prima comanda trebuie sa fie LOGIN.
-*/
+static int check_admin_access(int client_fd, const char *role, int is_admin_socket)
+{
+    if (!is_admin_socket)
+    {
+        (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
+        return -1;
+    }
+
+    if (!is_admin_role(role))
+    {
+        (void)send_result_response(client_fd, "ERROR: admin permission required\n");
+        return -1;
+    }
+
+    return 0;
+}
+
 static void handle_client(int client_fd, int is_admin_socket)
 {
     char line[MAX_LINE];
@@ -948,67 +1027,66 @@ static void handle_client(int client_fd, int is_admin_socket)
     }
     else if (strcmp(line, "STATS") == 0)
     {
-        if (!is_admin_socket)
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
         {
-            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
-            return;
+            (void)handle_stats(client_fd);
         }
-
-        if (!is_admin_role(role))
-        {
-            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
-            return;
-        }
-
-        (void)handle_stats(client_fd);
     }
     else if (strcmp(line, "LOGS") == 0)
     {
-        if (!is_admin_socket)
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
         {
-            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
-            return;
+            (void)handle_logs(client_fd);
         }
-
-        if (!is_admin_role(role))
-        {
-            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
-            return;
-        }
-
-        (void)handle_logs(client_fd);
     }
     else if (strcmp(line, "LIST_UPLOADS") == 0)
     {
-        if (!is_admin_socket)
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
         {
-            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
-            return;
+            (void)handle_list_directory(client_fd, "uploads", "Uploaded files:");
         }
-
-        if (!is_admin_role(role))
-        {
-            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
-            return;
-        }
-
-        (void)handle_list_directory(client_fd, "uploads", "Uploaded files:");
     }
     else if (strcmp(line, "LIST_REPORTS") == 0)
     {
-        if (!is_admin_socket)
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
         {
-            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
-            return;
+            (void)handle_list_directory(client_fd, "reports", "Generated reports:");
         }
-
-        if (!is_admin_role(role))
+    }
+    else if (strcmp(line, "SERVER_STATUS") == 0)
+    {
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
         {
-            (void)send_result_response(client_fd, "ERROR: admin permission required\n");
-            return;
+            (void)handle_server_status(client_fd);
         }
-
-        (void)handle_list_directory(client_fd, "reports", "Generated reports:");
+    }
+    else if (strcmp(line, "CLEAR_LOGS") == 0)
+    {
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
+        {
+            (void)handle_clear_logs(client_fd);
+        }
+    }
+    else if (strncmp(line, "DELETE_REPORT ", 14) == 0)
+    {
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
+        {
+            (void)handle_delete_report(client_fd, line);
+        }
+    }
+    else if (strcmp(line, "LIST_USERS") == 0)
+    {
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
+        {
+            (void)handle_list_users(client_fd);
+        }
+    }
+    else if (strcmp(line, "JOBS") == 0)
+    {
+        if (check_admin_access(client_fd, role, is_admin_socket) == 0)
+        {
+            (void)handle_jobs(client_fd);
+        }
     }
     else if (strcmp(line, "QUIT") == 0)
     {
@@ -1021,9 +1099,6 @@ static void handle_client(int client_fd, int is_admin_socket)
     }
 }
 
-/*
-  Curata procesele copil terminate ca sa nu ramana zombie processes.
-*/
 static void reap_finished_children(int signal_number)
 {
     int saved_errno = errno;

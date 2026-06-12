@@ -1,118 +1,84 @@
-/*
-  Descriere:
-  Acest fisier implementeaza clientul de administrare pentru proiectul T17.
-
-  Clientul admin:
-  - se autentifica automat la server folosind admin/admin123
-  - poate cere statistici server
-  - poate afisa logurile serverului
-  - poate lista fisierele uploadate
-  - poate lista rapoartele generate
-  - poate trimite comanda QUIT
-
-  Pentru simplitate, la fiecare comanda se deschide o conexiune noua catre server.
-*/
-
-#include <stdio.h>      // Pentru printf, fprintf, fgets, snprintf
-#include <stdlib.h>     // Pentru malloc, free
-#include <string.h>     // Pentru memset, strlen, strcmp, strcspn, sscanf, strncmp
-#include <sys/socket.h> // Pentru socket, connect, send, recv
-#include <sys/un.h>     // Pentru sockaddr_un
-#include <unistd.h>     // Pentru close
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
 
 #define ADMIN_SOCKET_PATH "/tmp/t17_admin.sock"
-
-#define ADMIN_USERNAME "admin"
-#define ADMIN_PASSWORD "admin123"
-
+#define BUFFER_SIZE 4096
 #define MAX_LINE 1024
 
-/*
-  Trimite tot bufferul prin socket.
-  send() poate trimite partial, deci functia repeta trimiterea pana cand
-  tot continutul a fost transmis.
-*/
 static int send_all(int sockfd, const void *buffer, size_t length)
 {
     const char *data = (const char *)buffer;
-    size_t total_sent = 0;
+    size_t sent = 0;
 
-    while (total_sent < length)
+    while (sent < length)
     {
-        ssize_t sent_now = send(sockfd, data + total_sent, length - total_sent, 0);
-
-        if (sent_now <= 0)
+        ssize_t n = send(sockfd, data + sent, length - sent, 0);
+        if (n <= 0)
         {
             return -1;
         }
 
-        total_sent += (size_t)sent_now;
+        sent += (size_t)n;
     }
 
     return 0;
 }
 
-/*
-  Primeste exact length bytes din socket.
-*/
 static int recv_all(int sockfd, void *buffer, size_t length)
 {
     char *data = (char *)buffer;
-    size_t total_received = 0;
+    size_t received = 0;
 
-    while (total_received < length)
+    while (received < length)
     {
-        ssize_t received_now = recv(sockfd, data + total_received, length - total_received, 0);
-
-        if (received_now <= 0)
+        ssize_t n = recv(sockfd, data + received, length - received, 0);
+        if (n <= 0)
         {
             return -1;
         }
 
-        total_received += (size_t)received_now;
+        received += (size_t)n;
     }
 
     return 0;
 }
 
-/*
-  Citeste o linie din socket pana la caracterul '\n'.
-*/
-static int recv_line(int sockfd, char *buffer, size_t max_len)
+static int recv_line(int sockfd, char *buffer, size_t size)
 {
-    size_t index = 0;
+    size_t pos = 0;
 
-    if (max_len == 0U)
+    while (pos + 1 < size)
     {
-        return -1;
-    }
+        char c;
+        ssize_t n = recv(sockfd, &c, 1, 0);
 
-    while (index < max_len - 1U)
-    {
-        char ch = '\0';
-        ssize_t received_now = recv(sockfd, &ch, 1, 0);
-
-        if (received_now <= 0)
+        if (n <= 0)
         {
-            return -1;
+            if (pos == 0)
+            {
+                return -1;
+            }
+
+            break;
         }
 
-        if (ch == '\n')
+        if (c == '\n')
         {
             break;
         }
 
-        buffer[index] = ch;
-        index++;
+        buffer[pos++] = c;
     }
 
-    buffer[index] = '\0';
-    return (int)index;
+    buffer[pos] = '\0';
+    return (int)pos;
 }
 
-/*
-  Creeaza conexiunea TCP catre server.
-*/
 static int connect_to_server(void)
 {
     int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -131,141 +97,64 @@ static int connect_to_server(void)
     if (written < 0 || (size_t)written >= sizeof(server_addr.sun_path))
     {
         fprintf(stderr, "UNIX socket path too long.\n");
-        (void)close(sockfd);
+        close(sockfd);
         return -1;
     }
 
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
     {
         perror("connect UNIX");
-        (void)close(sockfd);
+        close(sockfd);
         return -1;
     }
 
     return sockfd;
 }
 
-/*
-  Primeste raspuns de tip RESULT de la server si il pune in buffer.
-  Format:
-    RESULT <size>
-    <payload>
-*/
-static int receive_result_text(int sockfd, char *output, size_t output_size)
+static int read_result_response(int sockfd)
 {
     char line[MAX_LINE];
 
-    if (output_size == 0U)
-    {
-        return -1;
-    }
-
     if (recv_line(sockfd, line, sizeof(line)) <= 0)
     {
+        fprintf(stderr, "Failed to receive response header.\n");
         return -1;
     }
 
-    size_t result_size = 0;
-
-    if (sscanf(line, "RESULT %zu", &result_size) != 1)
+    if (strncmp(line, "RESULT ", 7) != 0)
     {
-        fprintf(stderr, "Raspuns invalid de la server.\n");
-        return -1;
+        printf("%s\n", line);
+        return 0;
     }
 
-    char *result = (char *)malloc(result_size + 1U);
-    if (result == NULL)
+    long size = atol(line + 7);
+    if (size < 0)
     {
+        fprintf(stderr, "Invalid response size.\n");
         return -1;
     }
 
-    if (recv_all(sockfd, result, result_size) != 0)
+    char *body = malloc((size_t)size + 1);
+    if (body == NULL)
     {
-        free(result);
+        fprintf(stderr, "Memory allocation failed.\n");
         return -1;
     }
 
-    result[result_size] = '\0';
-
-    int written = snprintf(output, output_size, "%s", result);
-
-    free(result);
-
-    if (written < 0 || (size_t)written >= output_size)
+    if (recv_all(sockfd, body, (size_t)size) != 0)
     {
+        fprintf(stderr, "Failed to receive response body.\n");
+        free(body);
         return -1;
     }
 
+    body[size] = '\0';
+    printf("\n%s\n", body);
+
+    free(body);
     return 0;
 }
 
-/*
-  Primeste si afiseaza raspunsul primit de la server.
-*/
-static int receive_and_print_result(int sockfd)
-{
-    char response[65536];
-
-    if (receive_result_text(sockfd, response, sizeof(response)) != 0)
-    {
-        return -1;
-    }
-
-    printf("\n%s\n", response);
-    return 0;
-}
-
-/*
-  Trimite comanda LOGIN catre server.
-  Admin clientul se autentifica folosind admin/admin123.
-*/
-static int login_to_server(int sockfd)
-{
-    char command[MAX_LINE];
-
-    int written = snprintf(command,
-                           sizeof(command),
-                           "LOGIN %s %s\n",
-                           ADMIN_USERNAME,
-                           ADMIN_PASSWORD);
-
-    if (written < 0 || (size_t)written >= sizeof(command))
-    {
-        fprintf(stderr, "Comanda LOGIN este prea lunga.\n");
-        return -1;
-    }
-
-    if (send_all(sockfd, command, strlen(command)) != 0)
-    {
-        fprintf(stderr, "Eroare la trimiterea comenzii LOGIN.\n");
-        return -1;
-    }
-
-    char response[MAX_LINE];
-
-    if (receive_result_text(sockfd, response, sizeof(response)) != 0)
-    {
-        fprintf(stderr, "Eroare la primirea raspunsului LOGIN.\n");
-        return -1;
-    }
-
-    if (strncmp(response, "OK", 2) != 0)
-    {
-        fprintf(stderr, "Autentificare admin esuata: %s", response);
-        return -1;
-    }
-
-    return 0;
-}
-
-/*
-  Trimite o comanda administrativa catre server.
-  Pentru fiecare comanda:
-  - se deschide conexiunea
-  - se trimite LOGIN
-  - se trimite comanda admin
-  - se primeste raspunsul
-*/
 static int send_admin_command(const char *command)
 {
     int sockfd = connect_to_server();
@@ -274,51 +163,68 @@ static int send_admin_command(const char *command)
         return -1;
     }
 
-    if (login_to_server(sockfd) != 0)
+    const char *login = "LOGIN admin admin123\n";
+
+    if (send_all(sockfd, login, strlen(login)) != 0)
     {
-        (void)close(sockfd);
+        fprintf(stderr, "Failed to send login.\n");
+        close(sockfd);
         return -1;
     }
 
-    char line[MAX_LINE];
-
-    int written = snprintf(line, sizeof(line), "%s\n", command);
-    if (written < 0 || (size_t)written >= sizeof(line))
+    if (read_result_response(sockfd) != 0)
     {
-        fprintf(stderr, "Comanda prea lunga.\n");
-        (void)close(sockfd);
+        close(sockfd);
         return -1;
     }
 
-    if (send_all(sockfd, line, strlen(line)) != 0)
+    char command_line[MAX_LINE];
+
+    int written = snprintf(command_line, sizeof(command_line), "%s\n", command);
+    if (written < 0 || (size_t)written >= sizeof(command_line))
     {
-        fprintf(stderr, "Eroare la trimiterea comenzii.\n");
-        (void)close(sockfd);
+        fprintf(stderr, "Command too long.\n");
+        close(sockfd);
         return -1;
     }
 
-    if (receive_and_print_result(sockfd) != 0)
+    if (send_all(sockfd, command_line, strlen(command_line)) != 0)
     {
-        fprintf(stderr, "Eroare la primirea raspunsului.\n");
-        (void)close(sockfd);
+        fprintf(stderr, "Failed to send command.\n");
+        close(sockfd);
         return -1;
     }
 
-    (void)close(sockfd);
-    return 0;
+    int result = read_result_response(sockfd);
+
+    close(sockfd);
+    return result;
 }
 
-/*
-  Afiseaza meniul clientului admin.
-*/
-static void print_menu(void)
+static void read_input(char *buffer, size_t size)
+{
+    if (fgets(buffer, (int)size, stdin) == NULL)
+    {
+        buffer[0] = '\0';
+        return;
+    }
+
+    buffer[strcspn(buffer, "\n")] = '\0';
+}
+
+static void show_menu(void)
 {
     printf("\n=== Admin Client ===\n");
     printf("1. Server stats\n");
     printf("2. Show server logs\n");
     printf("3. List uploaded files\n");
     printf("4. List reports\n");
-    printf("5. Quit\n");
+    printf("5. Server status\n");
+    printf("6. Clear server logs\n");
+    printf("7. Delete report\n");
+    printf("8. List users\n");
+    printf("9. Show analysis jobs\n");
+    printf("10. Quit\n");
     printf("Choose option: ");
 }
 
@@ -326,36 +232,72 @@ int main(void)
 {
     while (1)
     {
-        char option[MAX_LINE];
+        char option_line[32];
+        int option;
 
-        print_menu();
+        show_menu();
+        read_input(option_line, sizeof(option_line));
 
-        if (fgets(option, sizeof(option), stdin) == NULL)
-        {
-            return 1;
-        }
+        option = atoi(option_line);
 
-        option[strcspn(option, "\n")] = '\0';
+        if (option == 1)
+        {
+            send_admin_command("STATS");
+        }
+        else if (option == 2)
+        {
+            send_admin_command("LOGS");
+        }
+        else if (option == 3)
+        {
+            send_admin_command("LIST_UPLOADS");
+        }
+        else if (option == 4)
+        {
+            send_admin_command("LIST_REPORTS");
+        }
+        else if (option == 5)
+        {
+            send_admin_command("SERVER_STATUS");
+        }
+        else if (option == 6)
+        {
+            send_admin_command("CLEAR_LOGS");
+        }
+        else if (option == 7)
+        {
+            char report_name[256];
+            char command[MAX_LINE];
 
-        if (strcmp(option, "1") == 0)
-        {
-            (void)send_admin_command("STATS");
+            printf("Report name: ");
+            read_input(report_name, sizeof(report_name));
+
+            if (report_name[0] == '\0')
+            {
+                printf("Invalid report name.\n");
+                continue;
+            }
+
+            int written = snprintf(command, sizeof(command), "DELETE_REPORT %s", report_name);
+            if (written < 0 || (size_t)written >= sizeof(command))
+            {
+                printf("Report name too long.\n");
+                continue;
+            }
+
+            send_admin_command(command);
         }
-        else if (strcmp(option, "2") == 0)
+        else if (option == 8)
         {
-            (void)send_admin_command("LOGS");
+            send_admin_command("LIST_USERS");
         }
-        else if (strcmp(option, "3") == 0)
+        else if (option == 9)
         {
-            (void)send_admin_command("LIST_UPLOADS");
+            send_admin_command("JOBS");
         }
-        else if (strcmp(option, "4") == 0)
+        else if (option == 10)
         {
-            (void)send_admin_command("LIST_REPORTS");
-        }
-        else if (strcmp(option, "5") == 0)
-        {
-            (void)send_admin_command("QUIT");
+            send_admin_command("QUIT");
             break;
         }
         else

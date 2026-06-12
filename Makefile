@@ -1,17 +1,9 @@
-# Descriere:
-# Acest Makefile compileaza toate componentele proiectului:
-# - analyzer: modulul de analiza cu libconfig si libclang
-# - main: launcher compatibil cu varianta initiala
-# - server: server TCP
-# - client: client normal
-# - admin_client: client de administrare
-
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -pedantic -std=c11
 CLANG_INCLUDES = -I/usr/lib/llvm-18/include
 CLANG_LIBS = -L/usr/lib/llvm-18/lib -lconfig -lclang
 
-all: analyzer main server client admin_client
+all: analyzer main server client admin_client watch_reports
 
 analyzer: src/analyzer.c
 	$(CC) $(CFLAGS) src/analyzer.c -o analyzer $(CLANG_INCLUDES) $(CLANG_LIBS)
@@ -28,6 +20,9 @@ client: src/client.c
 admin_client: src/admin_client.c
 	$(CC) $(CFLAGS) src/admin_client.c -o admin_client
 
+watch_reports: src/watch_reports.c
+	$(CC) $(CFLAGS) src/watch_reports.c -o watch_reports
+
 clean:
-	rm -f analyzer main server client admin_client
+	rm -f analyzer main server client admin_client watch_reports
 	rm -rf uploads

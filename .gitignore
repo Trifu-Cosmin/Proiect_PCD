@@ -26,3 +26,5 @@ downloads_py/*
 *.out
 *.toc
 *.synctex.gz
+
+watch_reports
