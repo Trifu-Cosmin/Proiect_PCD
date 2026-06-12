@@ -2,488 +2,473 @@
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage[romanian]{babel}
 \usepackage{geometry}
 \usepackage{hyperref}
-\usepackage{longtable}
-\usepackage{array}
+\usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage{listings}
+\usepackage{longtable}
 
 \geometry{margin=2.5cm}
 
-\hypersetup{
-colorlinks=true,
-linkcolor=blue,
-urlcolor=blue
+\lstdefinestyle{code}{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    columns=fullflexible
 }
 
-\lstset{
-basicstyle=\ttfamily\small,
-breaklines=true,
-frame=single,
-columns=fullflexible
-}
-
-\title{SRS si SDD -- PCD T17 Semantic Analyzer}
-\author{Echipa proiect PCD}
+\title{SRS / SDD \\ T17 - Analiza Semantica Cod Sursa}
+\author{Proiect PCD}
 \date{2026}
 
 \begin{document}
 
 \maketitle
-
 \tableofcontents
 \newpage
 
 \section{Introducere}
 
-Acest document contine specificatia cerintelor software (SRS) si descrierea designului software (SDD) pentru proiectul PCD T17 -- Semantic Analyzer for Source Code.
+Acest document contine specificatia cerintelor software si descrierea de proiectare pentru aplicatia T17 - Analiza Semantica Cod Sursa. Proiectul este realizat pentru disciplina Programare Concurenta si Distribuita si are ca scop implementarea unei aplicatii client-server care permite incarcarea unor fisiere sursa C, analiza lor cu ajutorul bibliotecii libclang si generarea unor rapoarte text.
 
-Proiectul consta intr-o aplicatie client-server care permite analiza semantica a fisierelor sursa C. Clientul trimite fisierul catre server, serverul il salveaza, ruleaza un analyzer bazat pe \texttt{libclang} si trimite inapoi raportul rezultat.
+Aplicatia foloseste comunicare prin socket-uri, procese multiple, autentificare, transfer de fisiere, generare de rapoarte, operatii de administrare si monitorizare a directorului de rapoarte.
 
 \section{Scopul proiectului}
 
-Scopul proiectului este realizarea unei aplicatii distribuite care combina:
+Scopul proiectului este realizarea unui sistem distribuit simplu, dar complet functional, care permite:
+
 \begin{itemize}
-\item programarea cu socket-uri TCP;
-\item procese concurente;
-\item comunicarea client-server;
-\item autentificarea utilizatorilor;
-\item logarea operatiilor;
-\item analiza semantica de cod sursa;
-\item folosirea unei biblioteci externe.
+    \item incarcarea unui fisier sursa C de la client catre server;
+    \item analiza fisierului folosind libclang;
+    \item generarea unui raport cu informatii despre cod;
+    \item descarcarea raportului de catre client;
+    \item administrarea serverului printr-un client separat;
+    \item folosirea socket-urilor INET si UNIX;
+    \item folosirea mecanismelor \texttt{fork()}, \texttt{exec()}, \texttt{pipe()}, \texttt{select()} si \texttt{inotify}.
 \end{itemize}
 
-Tema aleasa este T17 -- Analiza Semantica Cod Sursa.
+\section{Domeniul aplicatiei}
+
+Aplicatia este destinata analizei statice a fisierelor C. Sistemul nu executa codul primit, ci il parseaza si extrage informatii relevante despre structura si posibile probleme din cod.
+
+Analiza include:
+
+\begin{itemize}
+    \item numar de functii;
+    \item numar de variabile;
+    \item numar de instructiuni \texttt{if};
+    \item numar de instructiuni \texttt{for};
+    \item numar de instructiuni \texttt{while};
+    \item diagnostice generate de libclang;
+    \item mesaje de warning sau error pentru cod problematic.
+\end{itemize}
 
 \section{Descriere generala}
 
-Aplicatia permite utilizatorilor sa trimita fisiere C catre server. Serverul analizeaza fisierul si genereaza un raport text. Raportul contine informatii despre diagnostice, functii, variabile si structuri de control.
+Sistemul are o arhitectura client-server. Clientii normali comunica cu serverul printr-un socket INET TCP pe adresa \texttt{127.0.0.1:8080}. Clientul admin comunica separat printr-un socket UNIX local, folosind calea \texttt{/tmp/t17\_admin.sock}.
 
-Sistemul include:
-\begin{itemize}
-\item server TCP in C;
-\item client normal in C;
-\item client admin in C;
-\item client alternativ in Python;
-\item modul analyzer in C;
-\item fisiere de configurare;
-\item loguri si rapoarte.
-\end{itemize}
-
-\section{Utilizatori}
-
-Sistemul are doua tipuri principale de utilizatori:
-
-\subsection{Utilizator normal}
-
-Un utilizator normal poate:
-\begin{itemize}
-\item sa se autentifice;
-\item sa trimita fisiere sursa pentru analiza;
-\item sa primeasca rezultatul analizei;
-\item sa descarce rapoarte.
-\end{itemize}
-
-\subsection{Administrator}
-
-Un administrator poate:
-\begin{itemize}
-\item sa vada statisticile serverului;
-\item sa vada logurile serverului;
-\item sa listeze fisierele uploadate;
-\item sa listeze rapoartele generate.
-\end{itemize}
+Serverul asteapta conexiuni folosind \texttt{select()} pentru a monitoriza simultan socket-ul TCP si socket-ul UNIX. Pentru fiecare conexiune acceptata, serverul creeaza un proces copil cu \texttt{fork()}, iar procesul copil trateaza clientul respectiv.
 
 \section{Cerinte functionale}
 
-\subsection{FR1 -- Pornirea serverului}
+\subsection{Cerinte pentru analiza codului}
 
-Serverul trebuie sa porneasca pe adresa \texttt{127.0.0.1} si portul \texttt{8080}.
+\begin{enumerate}[label=CF\arabic*.]
+    \item Aplicatia trebuie sa permita selectarea unui fisier sursa C pentru analiza.
+    \item Aplicatia trebuie sa foloseasca libclang pentru parsarea codului sursa.
+    \item Aplicatia trebuie sa extraga statistici despre functii, variabile si structuri de control.
+    \item Aplicatia trebuie sa afiseze diagnosticele generate de libclang.
+    \item Aplicatia trebuie sa genereze un raport text pentru fiecare fisier analizat.
+    \item Aplicatia trebuie sa salveze rapoartele in directorul \texttt{reports/}.
+\end{enumerate}
 
-\subsection{FR2 -- Acceptarea conexiunilor}
+\subsection{Cerinte pentru server}
 
-Serverul trebuie sa accepte conexiuni TCP de la clienti.
+\begin{enumerate}[label=CF\arabic*., resume]
+    \item Serverul trebuie sa porneasca pe socket INET TCP la adresa \texttt{127.0.0.1:8080}.
+    \item Serverul trebuie sa creeze un socket UNIX pentru administrare la \texttt{/tmp/t17\_admin.sock}.
+    \item Serverul trebuie sa foloseasca \texttt{select()} pentru a astepta conexiuni pe ambele socket-uri.
+    \item Serverul trebuie sa foloseasca \texttt{fork()} pentru tratarea concurenta a clientilor.
+    \item Serverul trebuie sa autentifice utilizatorii folosind fisierul \texttt{config/users.cfg}.
+    \item Serverul trebuie sa accepte comenzi de upload si download pentru clientii normali.
+    \item Serverul trebuie sa execute analyzer-ul folosind \texttt{fork()}, \texttt{exec()} si \texttt{pipe()}.
+    \item Serverul trebuie sa scrie loguri in \texttt{logs/server.log}.
+    \item Serverul trebuie sa mentina statistici in \texttt{logs/stats.txt}.
+    \item Serverul trebuie sa mentina istoricul joburilor in \texttt{logs/jobs.log}.
+\end{enumerate}
 
-\subsection{FR3 -- Concurenta}
+\subsection{Cerinte pentru clientul normal}
 
-Serverul trebuie sa poata gestiona mai multi clienti prin procese separate.
+\begin{enumerate}[label=CF\arabic*., resume]
+    \item Clientul normal trebuie sa se conecteze prin socket INET TCP.
+    \item Clientul normal trebuie sa trimita credentiale de autentificare.
+    \item Clientul normal trebuie sa poata incarca fisiere C catre server.
+    \item Clientul normal trebuie sa primeasca rezultatul analizei de la server.
+    \item Clientul normal trebuie sa poata descarca rapoarte generate anterior.
+\end{enumerate}
 
-\subsection{FR4 -- Autentificare}
+\subsection{Cerinte pentru clientul admin}
 
-Serverul trebuie sa autentifice utilizatorii folosind fisierul:
+\begin{enumerate}[label=CF\arabic*., resume]
+    \item Clientul admin trebuie sa se conecteze prin socket UNIX.
+    \item Clientul admin trebuie sa foloseasca rolul \texttt{admin}.
+    \item Clientul admin trebuie sa poata vedea statisticile serverului.
+    \item Clientul admin trebuie sa poata vedea logurile serverului.
+    \item Clientul admin trebuie sa poata lista fisierele incarcate.
+    \item Clientul admin trebuie sa poata lista rapoartele generate.
+    \item Clientul admin trebuie sa poata vedea statusul serverului.
+    \item Clientul admin trebuie sa poata sterge logurile.
+    \item Clientul admin trebuie sa poata sterge un raport.
+    \item Clientul admin trebuie sa poata lista utilizatorii configurati.
+    \item Clientul admin trebuie sa poata vedea joburile de analiza.
+\end{enumerate}
 
-\begin{lstlisting}
-config/users.cfg
-\end{lstlisting}
+\subsection{Cerinte pentru monitorizare}
 
-\subsection{FR5 -- Upload fisier}
-
-Clientul normal trebuie sa poata trimite un fisier sursa C catre server.
-
-\subsection{FR6 -- Salvare fisier}
-
-Serverul trebuie sa salveze fisierele primite in folderul:
-
-\begin{lstlisting}
-uploads/
-\end{lstlisting}
-
-\subsection{FR7 -- Analiza semantica}
-
-Serverul trebuie sa ruleze analyzer-ul pentru fisierul primit.
-
-\subsection{FR8 -- Generare raport}
-
-Serverul trebuie sa genereze un raport text in folderul:
-
-\begin{lstlisting}
-reports/
-\end{lstlisting}
-
-\subsection{FR9 -- Returnare rezultat}
-
-Serverul trebuie sa trimita rezultatul analizei catre client.
-
-\subsection{FR10 -- Download raport}
-
-Clientul trebuie sa poata descarca un raport generat anterior.
-
-\subsection{FR11 -- Client admin}
-
-Clientul admin trebuie sa poata cere statistici, loguri, lista fisierelor uploadate si lista rapoartelor.
-
-\subsection{FR12 -- Client Python}
-
-Sistemul trebuie sa includa un client intr-un alt limbaj, in cazul acesta Python.
-
-\subsection{FR13 -- Logging}
-
-Serverul trebuie sa scrie actiunile importante in:
-
-\begin{lstlisting}
-logs/server.log
-\end{lstlisting}
+\begin{enumerate}[label=CF\arabic*., resume]
+    \item Aplicatia trebuie sa includa un program separat care foloseste \texttt{inotify}.
+    \item Programul de monitorizare trebuie sa urmareasca directorul \texttt{reports/}.
+    \item Programul trebuie sa afiseze evenimente precum creare, modificare, scriere si stergere de rapoarte.
+\end{enumerate}
 
 \section{Cerinte nefunctionale}
 
-\subsection{NFR1 -- Sistem de operare}
-
-Aplicatia este destinata rularii pe Linux sau WSL.
-
-\subsection{NFR2 -- Compilare stricta}
-
-Codul trebuie sa compileze fara warning-uri cu:
-
-\begin{lstlisting}
--Wall -Wextra -Werror -pedantic -std=c11
-\end{lstlisting}
-
-\subsection{NFR3 -- Modularitate}
-
-Codul trebuie sa fie impartit in module clare:
-\begin{itemize}
-\item server;
-\item client;
-\item admin client;
-\item analyzer;
-\item client Python.
-\end{itemize}
-
-\subsection{NFR4 -- Simplitate}
-
-Protocolul de comunicare este text-based si usor de testat.
-
-\subsection{NFR5 -- Biblioteca externa}
-
-Aplicatia foloseste \texttt{libclang} pentru analiza codului sursa.
+\begin{enumerate}[label=CNF\arabic*.]
+    \item Codul trebuie sa fie scris in C pentru componentele principale.
+    \item Proiectul trebuie sa compileze fara warning-uri folosind \texttt{-Wall -Wextra -Werror -pedantic}.
+    \item Comunicarea client-server trebuie sa fie stabila pentru fisiere de dimensiuni moderate.
+    \item Serverul trebuie sa poata trata mai multi clienti prin procese copil.
+    \item Rapoartele si logurile trebuie salvate local in directoare separate.
+    \item Clientul admin trebuie separat logic de clientul normal.
+    \item Documentatia oficiala trebuie scrisa in LaTeX.
+\end{enumerate}
 
 \section{Arhitectura sistemului}
 
-Arhitectura generala este:
+Arhitectura generala este urmatoarea:
 
-\begin{lstlisting}
-+-------------+        TCP        +-------------+
-| Client C    | --------------->  |             |
-+-------------+                   |             |
-|   Server    | ---> Analyzer libclang
-+-------------+        TCP        |             |
-| Admin C     | --------------->  |             |
-+-------------+                   +-------------+
-|
-+-------------+        TCP           |
-| Python      | ---------------------+
-+-------------+
+\begin{lstlisting}[style=code]
+Client C normal      \
+                     -> INET TCP 127.0.0.1:8080 -> Server -> Analyzer -> Report
+Client Python        /
+
+Admin Client C       -> UNIX socket /tmp/t17_admin.sock -> Server
+
+Watch Reports        -> inotify -> reports/
 \end{lstlisting}
 
-Serverul reprezinta componenta centrala. Toate cererile ajung la server, iar serverul decide ce operatie trebuie executata.
+Serverul are doua puncte de intrare:
 
-\section{Design detaliat}
-
-\subsection{Server}
-
-Serverul are urmatoarele responsabilitati:
 \begin{itemize}
-\item creeaza socket TCP;
-\item face \texttt{bind};
-\item face \texttt{listen};
-\item accepta clienti;
-\item creeaza procese copil pentru clienti;
-\item autentifica utilizatorii;
-\item primeste fisiere;
-\item ruleaza analyzer-ul;
-\item trimite rezultate;
-\item scrie loguri.
+    \item socket INET TCP pentru clientii normali;
+    \item socket UNIX local pentru clientul admin.
 \end{itemize}
 
-\subsection{Client normal}
+\section{Componente software}
 
-Clientul normal are urmatoarele responsabilitati:
+\subsection{\texttt{src/analyzer.c}}
+
+Componenta \texttt{analyzer.c} foloseste libclang pentru a analiza fisiere C. Aceasta componenta primeste fisierul prin argumente de linie de comanda si afiseaza rezultatul analizei la \texttt{stdout}. Serverul captureaza acest output prin pipe.
+
+\subsection{\texttt{src/server.c}}
+
+Componenta principala a sistemului. Serverul:
+
 \begin{itemize}
-\item se conecteaza la server;
-\item se autentifica;
-\item trimite fisierul sursa;
-\item primeste rezultatul analizei;
-\item afiseaza rezultatul in terminal.
+    \item creeaza socket-ul INET pentru clientii normali;
+    \item creeaza socket-ul UNIX pentru admin;
+    \item foloseste \texttt{select()} pentru a astepta conexiuni;
+    \item foloseste \texttt{fork()} pentru clienti;
+    \item autentifica utilizatorii;
+    \item primeste fisiere;
+    \item ruleaza analyzer-ul;
+    \item salveaza rapoarte;
+    \item gestioneaza comenzi admin.
 \end{itemize}
 
-\subsection{Client admin}
+\subsection{\texttt{src/client.c}}
 
-Clientul admin ofera un meniu simplu:
+Clientul C normal permite upload-ul fisierelor si descarcarea rapoartelor. Acesta comunica prin TCP cu serverul.
 
-\begin{lstlisting}
+\subsection{\texttt{src/admin\_client.c}}
 
-1. Server stats
-2. Show server logs
-3. List uploaded files
-4. List reports
-5. Quit
-   \end{lstlisting}
+Clientul admin comunica prin socket UNIX si permite operatii de administrare:
 
-\subsection{Analyzer}
-
-Analyzer-ul este responsabil cu analiza codului sursa. Acesta foloseste \texttt{libclang} pentru parsarea fisierului C.
-
-Analyzer-ul extrage:
 \begin{itemize}
-\item diagnostice;
-\item numar de functii;
-\item numar de variabile;
-\item numar de instructiuni \texttt{if};
-\item numar de bucle \texttt{for};
-\item numar de bucle \texttt{while}.
+    \item \texttt{STATS};
+    \item \texttt{LOGS};
+    \item \texttt{LIST\_UPLOADS};
+    \item \texttt{LIST\_REPORTS};
+    \item \texttt{SERVER\_STATUS};
+    \item \texttt{CLEAR\_LOGS};
+    \item \texttt{DELETE\_REPORT};
+    \item \texttt{LIST\_USERS};
+    \item \texttt{JOBS}.
 \end{itemize}
 
-\subsection{Client Python}
+\subsection{\texttt{python\_client/client.py}}
 
-Clientul Python ofera doua operatii:
-\begin{itemize}
-\item \texttt{upload};
-\item \texttt{download}.
-\end{itemize}
+Clientul Python este o alternativa la clientul C si demonstreaza interoperabilitatea protocolului TCP.
 
-Exemple:
+\subsection{\texttt{src/watch\_reports.c}}
 
-\begin{lstlisting}
-python3 python_client/client.py upload tests/sample.c
-python3 python_client/client.py download sample_report.txt
+Program separat care foloseste \texttt{inotify} pentru monitorizarea directorului \texttt{reports/}. Acesta afiseaza evenimente atunci cand rapoartele sunt create, modificate sau sterse.
+
+\section{Structura proiectului}
+
+\begin{lstlisting}[style=code]
+Proiect_PCD/
+|-- Makefile
+|-- README.md
+|-- README.tex
+|-- config/
+|   |-- app.cfg
+|   |-- users.cfg
+|-- docs/
+|   |-- SRS_SDD.tex
+|   |-- protocol.tex
+|   |-- openapi.yaml
+|-- python_client/
+|   |-- client.py
+|-- src/
+|   |-- analyzer.c
+|   |-- main.c
+|   |-- server.c
+|   |-- client.c
+|   |-- admin_client.c
+|   |-- watch_reports.c
+|-- tests/
+|   |-- sample.c
+|   |-- bad.c
+|   |-- bad_syntax.c
+|   |-- bad_type.c
+|   |-- bad_uninitialized.c
+|   |-- good_math.c
+|   |-- good_nested.c
+|   |-- good_while.c
+|-- uploads/
+|-- reports/
+|-- logs/
+|-- downloads/
+|-- downloads_py/
 \end{lstlisting}
 
-\section{Fluxuri principale}
+\section{Protocol de comunicare}
 
-\subsection{Flux upload si analiza}
+Protocolul este text-based. Fiecare client trimite mai intai o comanda de login:
+
+\begin{lstlisting}[style=code]
+LOGIN <username> <password>
+\end{lstlisting}
+
+Serverul raspunde cu:
+
+\begin{lstlisting}[style=code]
+RESULT <size>
+OK role=<role>
+\end{lstlisting}
+
+Clientii normali pot folosi:
+
+\begin{lstlisting}[style=code]
+UPLOAD <filename> <size>
+DOWNLOAD_REPORT <report_name>
+QUIT
+\end{lstlisting}
+
+Clientul admin poate folosi:
+
+\begin{lstlisting}[style=code]
+STATS
+LOGS
+LIST_UPLOADS
+LIST_REPORTS
+SERVER_STATUS
+CLEAR_LOGS
+DELETE_REPORT <report_name>
+LIST_USERS
+JOBS
+QUIT
+\end{lstlisting}
+
+\section{Fluxuri de executie}
+
+\subsection{Upload si analiza fisier}
 
 \begin{enumerate}
-\item Clientul se conecteaza la server.
-\item Clientul se autentifica.
-\item Clientul trimite fisierul sursa.
-\item Serverul salveaza fisierul in \texttt{uploads/}.
-\item Serverul ruleaza analyzer-ul.
-\item Analyzer-ul genereaza raportul.
-\item Serverul salveaza raportul in \texttt{reports/}.
-\item Serverul trimite raportul catre client.
+    \item Clientul se conecteaza la server prin TCP.
+    \item Clientul trimite comanda \texttt{LOGIN}.
+    \item Serverul verifica utilizatorul in \texttt{config/users.cfg}.
+    \item Clientul trimite comanda \texttt{UPLOAD}.
+    \item Serverul salveaza fisierul in \texttt{uploads/}.
+    \item Serverul scrie jobul cu status \texttt{QUEUED}.
+    \item Serverul ruleaza analyzer-ul cu \texttt{fork()}, \texttt{exec()} si \texttt{pipe()}.
+    \item Serverul scrie status \texttt{RUNNING}, apoi \texttt{DONE} sau \texttt{FAILED}.
+    \item Serverul salveaza raportul in \texttt{reports/}.
+    \item Serverul trimite rezultatul catre client.
 \end{enumerate}
 
-\subsection{Flux admin stats}
+\subsection{Administrare server}
 
 \begin{enumerate}
-\item Adminul porneste clientul admin.
-\item Adminul alege optiunea \texttt{Server stats}.
-\item Clientul trimite cererea catre server.
-\item Serverul citeste statisticile.
-\item Serverul trimite raspunsul catre client.
+    \item Admin clientul se conecteaza la \texttt{/tmp/t17\_admin.sock}.
+    \item Admin clientul trimite login cu rol de admin.
+    \item Serverul verifica rolul.
+    \item Adminul trimite una dintre comenzile suportate.
+    \item Serverul intoarce rezultatul.
 \end{enumerate}
 
-\subsection{Flux download raport}
+\subsection{Monitorizare rapoarte}
 
 \begin{enumerate}
-\item Clientul cere un raport dupa nume.
-\item Serverul cauta raportul in \texttt{reports/}.
-\item Serverul trimite continutul raportului.
-\item Clientul salveaza raportul local.
+    \item Utilizatorul porneste programul \texttt{watch\_reports}.
+    \item Programul adauga un watch cu \texttt{inotify\_add\_watch()} pe \texttt{reports/}.
+    \item Cand apare un raport nou, programul afiseaza evenimentul.
 \end{enumerate}
 
-\section{Structuri de date si fisiere}
-
-\subsection{Fisiere de configurare}
+\section{Biblioteci si apeluri folosite}
 
 \begin{longtable}{|p{5cm}|p{9cm}|}
 \hline
-\textbf{Fisier} & \textbf{Rol} \ \\
+Componenta & Utilizare \\
 \hline
-\texttt{config/app.cfg} & configurare generala aplicatie \ \\
+\texttt{socket()} & creare socket INET si UNIX \\
 \hline
-\texttt{config/users.cfg} & utilizatori si roluri \ \\
+\texttt{bind()} & asociere socket cu adresa si port/cale locala \\
+\hline
+\texttt{listen()} & trecerea socket-ului in modul de asteptare conexiuni \\
+\hline
+\texttt{accept()} & acceptarea unui client \\
+\hline
+\texttt{select()} & asteptare simultana pe socket TCP si socket UNIX \\
+\hline
+\texttt{fork()} & creare proces copil pentru fiecare client \\
+\hline
+\texttt{exec()} & rularea analyzer-ului \\
+\hline
+\texttt{pipe()} & capturarea rezultatului analyzer-ului \\
+\hline
+\texttt{waitpid()} & asteptarea proceselor copil \\
+\hline
+\texttt{inotify} & monitorizarea directorului de rapoarte \\
+\hline
+\texttt{libclang} & analiza statica a codului C \\
+\hline
+\texttt{libconfig} & citirea configuratiei aplicatiei \\
 \hline
 \end{longtable}
 
-\subsection{Foldere generate}
+\section{Date si fisiere generate la runtime}
 
-\begin{longtable}{|p{5cm}|p{9cm}|}
-\hline
-\textbf{Folder} & \textbf{Rol} \ \\
-\hline
-\texttt{uploads/} & fisiere primite de la clienti \ \\
-\hline
-\texttt{reports/} & rapoarte generate \ \\
-\hline
-\texttt{downloads/} & rapoarte descarcate de clientul C \ \\
-\hline
-\texttt{downloads\_py/} & rapoarte descarcate de clientul Python \ \\
-\hline
-\texttt{logs/} & loguri si statistici server \ \\
-\hline
-\end{longtable}
+\begin{itemize}
+    \item \texttt{uploads/} - fisierele incarcate de clienti;
+    \item \texttt{reports/} - rapoartele generate;
+    \item \texttt{logs/server.log} - logurile serverului;
+    \item \texttt{logs/stats.txt} - statistici despre fisiere analizate;
+    \item \texttt{logs/jobs.log} - istoricul joburilor de analiza;
+    \item \texttt{/tmp/t17\_admin.sock} - socket UNIX pentru admin.
+\end{itemize}
 
 \section{Testare}
 
+Testarea se face prin compilare si rularea componentelor principale.
+
 \subsection{Compilare}
 
-\begin{lstlisting}
+\begin{lstlisting}[style=code]
 make clean
 make
 \end{lstlisting}
 
-Rezultatul asteptat este compilarea fara warning-uri.
+\subsection{Pornire server}
 
-\subsection{Test fisier valid}
+\begin{lstlisting}[style=code]
+./server
+\end{lstlisting}
 
-\begin{lstlisting}
+Output asteptat:
+
+\begin{lstlisting}[style=code]
+INET server running on 127.0.0.1:8080
+UNIX admin socket running on /tmp/t17_admin.sock
+Waiting for clients with select()...
+\end{lstlisting}
+
+\subsection{Test client normal}
+
+\begin{lstlisting}[style=code]
 ./client tests/sample.c
-\end{lstlisting}
-
-Rezultatul asteptat:
-\begin{itemize}
-\item diagnostice 0;
-\item raport generat;
-\item rezultat afisat clientului.
-\end{itemize}
-
-\subsection{Test fisier cu eroare de tip}
-
-\begin{lstlisting}
 ./client tests/bad_type.c
+./client download sample_report.txt
 \end{lstlisting}
 
-Rezultatul asteptat:
-\begin{itemize}
-\item diagnostic de tip error;
-\item raport generat;
-\item eroarea afisata in rezultat.
-\end{itemize}
+\subsection{Test admin client}
 
-\subsection{Test fisier cu warning}
-
-\begin{lstlisting}
-./client tests/bad_uninitialized.c
-\end{lstlisting}
-
-Rezultatul asteptat:
-\begin{itemize}
-\item diagnostic de tip warning;
-\item raport generat.
-\end{itemize}
-
-\subsection{Test concurenta}
-
-\begin{lstlisting}
-./client tests/sample.c & ./client tests/bad_type.c & wait
-\end{lstlisting}
-
-Rezultatul asteptat:
-\begin{itemize}
-\item ambele cereri sunt procesate;
-\item ambele rapoarte sunt generate;
-\item serverul continua sa ruleze.
-\end{itemize}
-
-\subsection{Test client Python}
-
-\begin{lstlisting}
-python3 python_client/client.py upload tests/good_while.c
-python3 python_client/client.py download good_while_report.txt
-\end{lstlisting}
-
-\subsection{Test admin}
-
-\begin{lstlisting}
+\begin{lstlisting}[style=code]
 ./admin_client
 \end{lstlisting}
 
-Se testeaza:
+Operatii testate:
+
 \begin{itemize}
-\item stats;
-\item logs;
-\item list uploaded files;
-\item list reports.
+    \item afisare statistici;
+    \item afisare loguri;
+    \item listare upload-uri;
+    \item listare rapoarte;
+    \item status server;
+    \item listare utilizatori;
+    \item listare joburi;
+    \item stergere raport;
+    \item stergere loguri.
 \end{itemize}
 
-\section{Impartirea muncii in echipa}
+\subsection{Test inotify}
 
-Echipa are 5 membri. O impartire posibila a responsabilitatilor este:
+\begin{lstlisting}[style=code]
+./watch_reports
+./client tests/sample.c
+\end{lstlisting}
 
-\begin{longtable}{|p{4cm}|p{10cm}|}
-\hline
-\textbf{Persoana} & \textbf{Responsabilitate} \ \\
-\hline
-Persoana 1 & server TCP si gestionarea conexiunilor \ \\
-\hline
-Persoana 2 & client normal si protocol de comunicare \ \\
-\hline
-Persoana 3 & analyzer \texttt{libclang} si generare rapoarte \ \\
-\hline
-Persoana 4 & admin client, loguri si statistici \ \\
-\hline
-Persoana 5 & client Python, teste si documentatie \ \\
-\hline
-\end{longtable}
+Output posibil:
 
-\section{Limitari}
+\begin{lstlisting}[style=code]
+Watching directory: reports
+Waiting for report changes...
+[2026-06-12 12:26:09] report created: sample_report.txt
+[2026-06-12 12:26:09] report modified: sample_report.txt
+[2026-06-12 12:26:09] report written: sample_report.txt
+\end{lstlisting}
 
-Aplicatia este realizata pentru scop educational si ruleaza local. Limitari:
+\section{Limitari curente}
+
+Aplicatia are urmatoarele limitari:
+
 \begin{itemize}
-\item nu foloseste TLS;
-\item autentificarea este simpla, bazata pe fisier;
-\item nu foloseste baza de date;
-\item suportul este orientat spre fisiere C;
-\item analiza este limitata la metricile implementate.
+    \item analiza este concentrata pe fisiere C;
+    \item protocolul este simplu, text-based;
+    \item REST este documentat prin OpenAPI, dar implementarea principala este socket-based;
+    \item job tracking-ul este salvat in fisier text, nu intr-o baza de date;
+    \item serverul este destinat pentru testare locala.
 \end{itemize}
 
-\section{Posibile extensii}
+\section{Directii viitoare}
 
-Aplicatia poate fi extinsa prin:
+Directii posibile de dezvoltare:
+
 \begin{itemize}
-\item suport mai bun pentru C++;
-\item calcularea complexitatii ciclomatice;
-\item afisare HTML pentru rapoarte;
-\item interfata web;
-\item stocare in baza de date;
-\item suport pentru mai multe limbaje de programare.
+    \item implementarea unui REST API real;
+    \item adaugarea unei cozi asincrone reale pentru joburi;
+    \item analiza mai avansata a codului;
+    \item suport mai bun pentru fisiere C++;
+    \item salvarea rezultatelor intr-o baza de date;
+    \item interfata grafica pentru vizualizarea rapoartelor.
 \end{itemize}
 
 \section{Concluzie}
 
-Proiectul implementeaza o aplicatie client-server functionala pentru analiza semantica a codului sursa. Sistemul include server TCP concurent, client C, client admin, client Python, autentificare, loguri, rapoarte si analiza bazata pe \texttt{libclang}. Functionalitatile principale au fost testate pe mai multe fisiere sursa, atat valide, cat si cu erori.
+Proiectul implementeaza o aplicatie client-server functionala pentru analiza semantica a codului sursa C. Sistemul foloseste socket-uri INET pentru clientii normali, socket UNIX pentru administrare, \texttt{select()} pentru monitorizarea mai multor socket-uri, \texttt{fork()} pentru concurenta, \texttt{exec()} si \texttt{pipe()} pentru rularea analyzer-ului, precum si \texttt{inotify} pentru monitorizarea rapoartelor generate.
+
+Prin aceste functionalitati, proiectul acopera cerinte importante din zona de programare concurenta si distribuita.
 
 \end{document}
