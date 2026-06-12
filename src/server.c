@@ -37,15 +37,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #define SERVER_IP "127.0.0.1"
 #define SERVER_PORT 8080
+#define ADMIN_SOCKET_PATH "/tmp/t17_admin.sock"
 
 #define MAX_LINE 1024
 #define MAX_FILENAME 256
@@ -894,7 +897,7 @@ static int handle_upload(int client_fd, const char *line)
   Proceseaza o conexiune client.
   Prima comanda trebuie sa fie LOGIN.
 */
-static void handle_client(int client_fd)
+static void handle_client(int client_fd, int is_admin_socket)
 {
     char line[MAX_LINE];
     char role[MAX_ROLE];
@@ -945,6 +948,12 @@ static void handle_client(int client_fd)
     }
     else if (strcmp(line, "STATS") == 0)
     {
+        if (!is_admin_socket)
+        {
+            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
+            return;
+        }
+
         if (!is_admin_role(role))
         {
             (void)send_result_response(client_fd, "ERROR: admin permission required\n");
@@ -955,6 +964,12 @@ static void handle_client(int client_fd)
     }
     else if (strcmp(line, "LOGS") == 0)
     {
+        if (!is_admin_socket)
+        {
+            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
+            return;
+        }
+
         if (!is_admin_role(role))
         {
             (void)send_result_response(client_fd, "ERROR: admin permission required\n");
@@ -965,6 +980,12 @@ static void handle_client(int client_fd)
     }
     else if (strcmp(line, "LIST_UPLOADS") == 0)
     {
+        if (!is_admin_socket)
+        {
+            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
+            return;
+        }
+
         if (!is_admin_role(role))
         {
             (void)send_result_response(client_fd, "ERROR: admin permission required\n");
@@ -975,6 +996,12 @@ static void handle_client(int client_fd)
     }
     else if (strcmp(line, "LIST_REPORTS") == 0)
     {
+        if (!is_admin_socket)
+        {
+            (void)send_result_response(client_fd, "ERROR: admin commands require UNIX socket\n");
+            return;
+        }
+
         if (!is_admin_role(role))
         {
             (void)send_result_response(client_fd, "ERROR: admin permission required\n");
@@ -1011,6 +1038,164 @@ static void reap_finished_children(int signal_number)
     errno = saved_errno;
 }
 
+static int create_tcp_server_socket(void)
+{
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0)
+    {
+        perror("socket INET");
+        return -1;
+    }
+
+    int opt = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
+        perror("setsockopt");
+        (void)close(server_fd);
+        return -1;
+    }
+
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+    {
+        perror("bind INET");
+        (void)close(server_fd);
+        return -1;
+    }
+
+    if (listen(server_fd, 10) < 0)
+    {
+        perror("listen INET");
+        (void)close(server_fd);
+        return -1;
+    }
+
+    return server_fd;
+}
+
+static int create_unix_admin_socket(void)
+{
+    int admin_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (admin_fd < 0)
+    {
+        perror("socket UNIX");
+        return -1;
+    }
+
+    (void)unlink(ADMIN_SOCKET_PATH);
+
+    struct sockaddr_un admin_addr;
+    memset(&admin_addr, 0, sizeof(admin_addr));
+
+    admin_addr.sun_family = AF_UNIX;
+
+    int written = snprintf(admin_addr.sun_path, sizeof(admin_addr.sun_path), "%s", ADMIN_SOCKET_PATH);
+    if (written < 0 || (size_t)written >= sizeof(admin_addr.sun_path))
+    {
+        fprintf(stderr, "UNIX socket path too long.\n");
+        (void)close(admin_fd);
+        return -1;
+    }
+
+    if (bind(admin_fd, (struct sockaddr *)&admin_addr, sizeof(admin_addr)) < 0)
+    {
+        perror("bind UNIX");
+        (void)close(admin_fd);
+        return -1;
+    }
+
+    if (listen(admin_fd, 10) < 0)
+    {
+        perror("listen UNIX");
+        (void)close(admin_fd);
+        (void)unlink(ADMIN_SOCKET_PATH);
+        return -1;
+    }
+
+    return admin_fd;
+}
+
+static void accept_and_fork_client(int listen_fd, int tcp_fd, int unix_fd, int is_admin_socket)
+{
+    int client_fd = accept(listen_fd, NULL, NULL);
+
+    if (client_fd < 0)
+    {
+        perror("accept");
+        log_message("ERROR", "accept failed");
+        return;
+    }
+
+    pid_t pid = fork();
+
+    if (pid < 0)
+    {
+        perror("fork");
+        log_message("ERROR", "fork failed for client connection");
+        (void)close(client_fd);
+        return;
+    }
+
+    if (pid == 0)
+    {
+        struct sigaction child_sa;
+        memset(&child_sa, 0, sizeof(child_sa));
+
+        child_sa.sa_handler = SIG_DFL;
+        sigemptyset(&child_sa.sa_mask);
+        child_sa.sa_flags = 0;
+
+        if (sigaction(SIGCHLD, &child_sa, NULL) == -1)
+        {
+            perror("sigaction child");
+            (void)close(client_fd);
+            (void)close(tcp_fd);
+            (void)close(unix_fd);
+            _exit(1);
+        }
+
+        (void)close(tcp_fd);
+        (void)close(unix_fd);
+
+        if (is_admin_socket)
+        {
+            printf("Admin client connected through UNIX socket.\n");
+            log_message("INFO", "Admin client connected through UNIX socket");
+        }
+        else
+        {
+            printf("Client connected through INET socket.\n");
+            log_message("INFO", "Client connected through INET socket");
+        }
+
+        handle_client(client_fd, is_admin_socket);
+
+        (void)close(client_fd);
+
+        if (is_admin_socket)
+        {
+            printf("Admin client disconnected.\n");
+            log_message("INFO", "Admin client disconnected");
+        }
+        else
+        {
+            printf("Client disconnected.\n");
+            log_message("INFO", "Client disconnected");
+        }
+
+        fflush(stdout);
+        _exit(0);
+    }
+
+    (void)close(client_fd);
+}
+
 int main(void)
 {
     (void)ensure_dir("uploads");
@@ -1030,107 +1215,65 @@ int main(void)
         return 1;
     }
 
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0)
+    int tcp_fd = create_tcp_server_socket();
+    if (tcp_fd < 0)
     {
-        perror("socket");
         return 1;
     }
 
-    int opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    int unix_fd = create_unix_admin_socket();
+    if (unix_fd < 0)
     {
-        perror("setsockopt");
-        (void)close(server_fd);
+        (void)close(tcp_fd);
         return 1;
     }
 
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
+    printf("INET server running on %s:%d\n", SERVER_IP, SERVER_PORT);
+    printf("UNIX admin socket running on %s\n", ADMIN_SOCKET_PATH);
+    printf("Waiting for clients with select()...\n");
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT);
-    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
-
-    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-    {
-        perror("bind");
-        (void)close(server_fd);
-        return 1;
-    }
-
-    if (listen(server_fd, 10) < 0)
-    {
-        perror("listen");
-        (void)close(server_fd);
-        return 1;
-    }
-
-    printf("Server running on %s:%d\n", SERVER_IP, SERVER_PORT);
-    printf("Waiting for clients...\n");
-
-    log_message("INFO", "Concurrent server started on %s:%d", SERVER_IP, SERVER_PORT);
+    log_message("INFO", "Server started with INET socket %s:%d and UNIX socket %s",
+                SERVER_IP,
+                SERVER_PORT,
+                ADMIN_SOCKET_PATH);
 
     while (1)
     {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
+        fd_set read_fds;
 
-        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+        FD_ZERO(&read_fds);
+        FD_SET(tcp_fd, &read_fds);
+        FD_SET(unix_fd, &read_fds);
 
-        if (client_fd < 0)
+        int max_fd = tcp_fd > unix_fd ? tcp_fd : unix_fd;
+        int ready = select(max_fd + 1, &read_fds, NULL, NULL, NULL);
+
+        if (ready < 0)
         {
-            perror("accept");
-            log_message("ERROR", "accept failed");
-            continue;
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            perror("select");
+            log_message("ERROR", "select failed");
+            break;
         }
 
-        pid_t pid = fork();
-
-        if (pid < 0)
+        if (FD_ISSET(tcp_fd, &read_fds))
         {
-            perror("fork");
-            log_message("ERROR", "fork failed for client connection");
-            (void)close(client_fd);
-            continue;
+            accept_and_fork_client(tcp_fd, tcp_fd, unix_fd, 0);
         }
 
-        if (pid == 0)
-{
-    struct sigaction child_sa;
-    memset(&child_sa, 0, sizeof(child_sa));
-
-    child_sa.sa_handler = SIG_DFL;
-    sigemptyset(&child_sa.sa_mask);
-    child_sa.sa_flags = 0;
-
-    if (sigaction(SIGCHLD, &child_sa, NULL) == -1)
-    {
-        perror("sigaction child");
-        (void)close(client_fd);
-        (void)close(server_fd);
-        _exit(1);
+        if (FD_ISSET(unix_fd, &read_fds))
+        {
+            accept_and_fork_client(unix_fd, tcp_fd, unix_fd, 1);
+        }
     }
 
-    (void)close(server_fd);
+    (void)close(tcp_fd);
+    (void)close(unix_fd);
+    (void)unlink(ADMIN_SOCKET_PATH);
 
-    printf("Client connected.\n");
-    log_message("INFO", "Client connected in child process");
-
-    handle_client(client_fd);
-
-    (void)close(client_fd);
-
-    printf("Client disconnected.\n");
-    log_message("INFO", "Client disconnected from child process");
-
-    fflush(stdout);
-    _exit(0);
-}
-
-        (void)close(client_fd);
-    }
-
-    (void)close(server_fd);
     return 0;
 }

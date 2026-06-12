@@ -13,16 +13,14 @@
   Pentru simplitate, la fiecare comanda se deschide o conexiune noua catre server.
 */
 
-#include <arpa/inet.h>  // Pentru inet_addr
-#include <netinet/in.h> // Pentru sockaddr_in
 #include <stdio.h>      // Pentru printf, fprintf, fgets, snprintf
 #include <stdlib.h>     // Pentru malloc, free
 #include <string.h>     // Pentru memset, strlen, strcmp, strcspn, sscanf, strncmp
 #include <sys/socket.h> // Pentru socket, connect, send, recv
+#include <sys/un.h>     // Pentru sockaddr_un
 #include <unistd.h>     // Pentru close
 
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 8080
+#define ADMIN_SOCKET_PATH "/tmp/t17_admin.sock"
 
 #define ADMIN_USERNAME "admin"
 #define ADMIN_PASSWORD "admin123"
@@ -117,23 +115,29 @@ static int recv_line(int sockfd, char *buffer, size_t max_len)
 */
 static int connect_to_server(void)
 {
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sockfd < 0)
     {
-        perror("socket");
+        perror("socket UNIX");
         return -1;
     }
 
-    struct sockaddr_in server_addr;
+    struct sockaddr_un server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT);
-    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+    server_addr.sun_family = AF_UNIX;
+
+    int written = snprintf(server_addr.sun_path, sizeof(server_addr.sun_path), "%s", ADMIN_SOCKET_PATH);
+    if (written < 0 || (size_t)written >= sizeof(server_addr.sun_path))
+    {
+        fprintf(stderr, "UNIX socket path too long.\n");
+        (void)close(sockfd);
+        return -1;
+    }
 
     if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
     {
-        perror("connect");
+        perror("connect UNIX");
         (void)close(sockfd);
         return -1;
     }
