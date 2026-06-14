@@ -44,7 +44,10 @@ Aplicatia include:
     \item rapoarte generate automat;
     \item loguri si statistici;
     \item job tracking;
-    \item monitorizare \texttt{reports/} cu inotify.
+    \item monitorizare \texttt{reports/} cu inotify;
+    \item REST API minimal;
+    \item SOAP API minimal;
+    \item WSDL pentru SOAP API.
 \end{itemize}
 
 \section{Tehnologii folosite}
@@ -61,6 +64,8 @@ Aplicatia include:
     \item \texttt{inotify};
     \item libclang;
     \item libconfig;
+    \item REST API cu \texttt{http.server};
+    \item SOAP API minimal;
     \item Makefile.
 \end{itemize}
 
@@ -80,6 +85,13 @@ Proiect_PCD/
 |   |-- openapi.yaml
 |-- python_client/
 |   |-- client.py
+|-- rest_api/
+|   |-- app.py
+|-- soap_api/
+|   |-- soap_server.py
+|-- scripts/
+|   |-- test_rest.sh
+|   |-- test_soap.sh
 |-- src/
 |   |-- analyzer.c
 |   |-- main.c
@@ -100,23 +112,12 @@ Proiect_PCD/
 
 \section{Instalare dependinte}
 
-Pe Ubuntu/WSL se pot instala dependintele cu:
-
 \begin{lstlisting}[style=code]
 sudo apt update
-sudo apt install build-essential libclang-dev libconfig-dev python3
-\end{lstlisting}
-
-In functie de versiunea LLVM instalata, Makefile-ul poate folosi calea:
-
-\begin{lstlisting}[style=code]
-/usr/lib/llvm-18/include
-/usr/lib/llvm-18/lib
+sudo apt install build-essential libclang-dev libconfig-dev python3 curl
 \end{lstlisting}
 
 \section{Compilare}
-
-Pentru compilare:
 
 \begin{lstlisting}[style=code]
 make clean
@@ -136,82 +137,38 @@ watch_reports
 
 \section{Rulare server}
 
-Serverul se porneste cu:
-
 \begin{lstlisting}[style=code]
 ./server
 \end{lstlisting}
 
-Output asteptat:
+\section{Rulare watch reports}
 
 \begin{lstlisting}[style=code]
-INET server running on 127.0.0.1:8080
-UNIX admin socket running on /tmp/t17_admin.sock
-Waiting for clients with select()...
+./watch_reports
 \end{lstlisting}
-
-Serverul asculta simultan pe:
-
-\begin{itemize}
-    \item \texttt{127.0.0.1:8080} pentru clienti normali;
-    \item \texttt{/tmp/t17\_admin.sock} pentru admin.
-\end{itemize}
 
 \section{Rulare client C normal}
 
-Pentru upload si analiza:
-
 \begin{lstlisting}[style=code]
 ./client tests/sample.c
-\end{lstlisting}
-
-Pentru alt fisier:
-
-\begin{lstlisting}[style=code]
 ./client tests/bad_type.c
-\end{lstlisting}
-
-Pentru download de raport:
-
-\begin{lstlisting}[style=code]
 ./client download sample_report.txt
-\end{lstlisting}
-
-Rapoartele descarcate se salveaza in:
-
-\begin{lstlisting}[style=code]
-downloads/
 \end{lstlisting}
 
 \section{Rulare client Python}
 
-Clientul Python poate fi folosit pentru upload:
-
 \begin{lstlisting}[style=code]
-python3 python_client/client.py upload tests/sample.c
-\end{lstlisting}
-
-Pentru download:
-
-\begin{lstlisting}[style=code]
-python3 python_client/client.py download sample_report.txt
-\end{lstlisting}
-
-Rapoartele descarcate prin clientul Python se salveaza in:
-
-\begin{lstlisting}[style=code]
-downloads_py/
+python3 python_client/client.py upload tests/good_math.c
+python3 python_client/client.py download good_math_report.txt
 \end{lstlisting}
 
 \section{Rulare admin client}
-
-Admin clientul se porneste cu:
 
 \begin{lstlisting}[style=code]
 ./admin_client
 \end{lstlisting}
 
-Meniul admin:
+Meniu admin:
 
 \begin{lstlisting}[style=code]
 1. Server stats
@@ -226,41 +183,82 @@ Meniul admin:
 10. Quit
 \end{lstlisting}
 
-Admin clientul comunica prin socket UNIX:
+\section{REST API}
+
+Pornire:
 
 \begin{lstlisting}[style=code]
-/tmp/t17_admin.sock
+python3 rest_api/app.py
 \end{lstlisting}
 
-\section{Monitorizare rapoarte cu inotify}
-
-Pentru monitorizarea directorului \texttt{reports/}:
+Adresa:
 
 \begin{lstlisting}[style=code]
-./watch_reports
+http://127.0.0.1:8081
 \end{lstlisting}
 
-Apoi, intr-un alt terminal:
+Testare:
 
 \begin{lstlisting}[style=code]
-./client tests/sample.c
+./scripts/test_rest.sh
 \end{lstlisting}
 
-Output posibil:
+Endpoint-uri:
 
 \begin{lstlisting}[style=code]
-Watching directory: reports
-Waiting for report changes...
-[2026-06-12 12:26:09] report created: sample_report.txt
-[2026-06-12 12:26:09] report modified: sample_report.txt
-[2026-06-12 12:26:09] report written: sample_report.txt
+GET /health
+GET /stats
+GET /reports
+GET /reports/<name>
+GET /uploads
+GET /jobs
+GET /users
+GET /logs
+GET /ui
+\end{lstlisting}
+
+\section{SOAP API}
+
+Pornire:
+
+\begin{lstlisting}[style=code]
+python3 soap_api/soap_server.py
+\end{lstlisting}
+
+Endpoint SOAP:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082/soap
+\end{lstlisting}
+
+WSDL:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082/wsdl
+\end{lstlisting}
+
+Testare:
+
+\begin{lstlisting}[style=code]
+./scripts/test_soap.sh
+curl http://127.0.0.1:8082/wsdl
+\end{lstlisting}
+
+Operatii SOAP:
+
+\begin{lstlisting}[style=code]
+Health
+Stats
+Reports
+Uploads
+Jobs
+Users
+Logs
 \end{lstlisting}
 
 \section{Fisiere de configurare}
 
 \subsection{\texttt{config/users.cfg}}
-
-Format:
 
 \begin{lstlisting}[style=code]
 username:password:role
@@ -289,8 +287,6 @@ Fisier folosit pentru configurarea analyzer-ului.
 
 \section{Testare recomandata}
 
-\subsection{Test complet}
-
 Terminal 1:
 
 \begin{lstlisting}[style=code]
@@ -306,40 +302,41 @@ Terminal 2:
 Terminal 3:
 
 \begin{lstlisting}[style=code]
-./client tests/sample.c
-./client tests/bad_type.c
-./client download sample_report.txt
+python3 rest_api/app.py
 \end{lstlisting}
 
 Terminal 4:
 
 \begin{lstlisting}[style=code]
+python3 soap_api/soap_server.py
+\end{lstlisting}
+
+Terminal 5:
+
+\begin{lstlisting}[style=code]
+./client tests/sample.c
+./client tests/bad_type.c
+./client download sample_report.txt
+\end{lstlisting}
+
+Terminal 6:
+
+\begin{lstlisting}[style=code]
+python3 python_client/client.py upload tests/good_math.c
+python3 python_client/client.py download good_math_report.txt
+\end{lstlisting}
+
+Terminal 7:
+
+\begin{lstlisting}[style=code]
 ./admin_client
 \end{lstlisting}
 
-In admin client se pot testa:
-
-\begin{itemize}
-    \item \texttt{Server stats};
-    \item \texttt{List reports};
-    \item \texttt{List users};
-    \item \texttt{Show analysis jobs};
-    \item \texttt{Delete report}.
-\end{itemize}
-
-\section{Curatare}
-
-Pentru stergerea executabilelor si a directorului \texttt{uploads/}:
+Terminal 8:
 
 \begin{lstlisting}[style=code]
-make clean
-\end{lstlisting}
-
-Pentru curatare manuala:
-
-\begin{lstlisting}[style=code]
-rm -rf uploads reports logs downloads downloads_py
-rm -f /tmp/t17_admin.sock
+./scripts/test_rest.sh
+./scripts/test_soap.sh
 \end{lstlisting}
 
 \section{Documentatie}
@@ -352,12 +349,10 @@ docs/protocol.tex
 README.tex
 \end{lstlisting}
 
-Pentru generare PDF:
+Specificatia REST este in:
 
 \begin{lstlisting}[style=code]
-pdflatex README.tex
-pdflatex -output-directory=docs docs/SRS_SDD.tex
-pdflatex -output-directory=docs docs/protocol.tex
+docs/openapi.yaml
 \end{lstlisting}
 
 \section{Functionalitati principale bifate}
@@ -372,11 +367,15 @@ pdflatex -output-directory=docs docs/protocol.tex
     \item operatii admin;
     \item job tracking;
     \item \texttt{inotify} pentru monitorizare rapoarte;
-    \item client in alta limba, prin Python.
+    \item client in alta limba, prin Python;
+    \item REST API minimal;
+    \item SOAP API minimal;
+    \item WSDL;
+    \item script de test pentru REST si SOAP.
 \end{itemize}
 
 \section{Concluzie}
 
-Proiectul este o aplicatie distribuita locala care foloseste mai multe concepte importante din programarea concurenta si distribuita: socket-uri INET, socket-uri UNIX, procese, pipe-uri, select, autentificare, transfer de fisiere si monitorizare cu inotify.
+Proiectul este o aplicatie distribuita locala care foloseste mai multe concepte importante din programarea concurenta si distribuita: socket-uri INET, socket-uri UNIX, procese, pipe-uri, select, autentificare, transfer de fisiere, monitorizare cu inotify, REST API si SOAP API.
 
 \end{document}

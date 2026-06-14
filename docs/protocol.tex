@@ -28,13 +28,14 @@
 
 \section{Introducere}
 
-Acest document descrie protocolul de comunicare folosit in proiectul T17 - Analiza Semantica Cod Sursa.
+Acest document descrie protocoalele de comunicare folosite in proiectul T17 - Analiza Semantica Cod Sursa.
 
-Protocolul este text-based si ruleaza peste doua tipuri de socket-uri:
+Proiectul foloseste trei forme de comunicare:
 
 \begin{itemize}
-    \item socket INET TCP pentru clientii normali;
-    \item socket UNIX pentru clientul admin.
+    \item protocol socket text-based pentru clientii C/Python si admin;
+    \item REST API minimal pentru acces HTTP cu raspunsuri JSON;
+    \item SOAP API minimal pentru acces HTTP cu raspunsuri XML SOAP.
 \end{itemize}
 
 Clientii normali comunica prin:
@@ -49,19 +50,31 @@ Clientul admin comunica prin:
 /tmp/t17_admin.sock
 \end{lstlisting}
 
-\section{Model de comunicare}
+REST API-ul ruleaza pe:
 
-Fiecare conexiune incepe obligatoriu cu o comanda de autentificare:
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8081
+\end{lstlisting}
+
+SOAP API-ul ruleaza pe:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082
+\end{lstlisting}
+
+\section{Model de comunicare socket}
+
+Fiecare conexiune socket incepe obligatoriu cu o comanda de autentificare:
 
 \begin{lstlisting}[style=code]
 LOGIN <username> <password>
 \end{lstlisting}
 
-Dupa autentificare, clientul trimite o singura comanda principala catre server. Serverul proceseaza comanda si raspunde.
+Dupa autentificare, clientul trimite o comanda principala catre server. Serverul proceseaza comanda si raspunde.
 
 Serverul creeaza cate un proces copil pentru fiecare conexiune acceptata. Socket-urile principale sunt monitorizate cu \texttt{select()}.
 
-\section{Format raspunsuri}
+\section{Format raspunsuri socket}
 
 \subsection{Raspuns text}
 
@@ -70,20 +83,6 @@ Pentru raspunsuri text, serverul foloseste formatul:
 \begin{lstlisting}[style=code]
 RESULT <size>
 <body>
-\end{lstlisting}
-
-Unde:
-
-\begin{itemize}
-    \item \texttt{size} este dimensiunea corpului raspunsului in bytes;
-    \item \texttt{body} este textul propriu-zis.
-\end{itemize}
-
-Exemplu:
-
-\begin{lstlisting}[style=code]
-RESULT 14
-OK role=admin
 \end{lstlisting}
 
 \subsection{Raspuns fisier}
@@ -95,14 +94,6 @@ FILE <filename> <size>
 <file_content>
 \end{lstlisting}
 
-Unde:
-
-\begin{itemize}
-    \item \texttt{filename} este numele raportului;
-    \item \texttt{size} este dimensiunea fisierului in bytes;
-    \item \texttt{file\_content} este continutul binar/text al fisierului.
-\end{itemize}
-
 \section{Autentificare}
 
 Comanda de autentificare:
@@ -111,30 +102,11 @@ Comanda de autentificare:
 LOGIN <username> <password>
 \end{lstlisting}
 
-Exemplu pentru user normal:
+Exemple:
 
 \begin{lstlisting}[style=code]
 LOGIN user1 pass1
-\end{lstlisting}
-
-Exemplu pentru admin:
-
-\begin{lstlisting}[style=code]
 LOGIN admin admin123
-\end{lstlisting}
-
-Raspuns pentru autentificare reusita:
-
-\begin{lstlisting}[style=code]
-RESULT <size>
-OK role=<role>
-\end{lstlisting}
-
-Raspuns pentru autentificare esuata:
-
-\begin{lstlisting}[style=code]
-RESULT <size>
-ERROR: invalid credentials
 \end{lstlisting}
 
 Utilizatorii sunt cititi din:
@@ -143,7 +115,7 @@ Utilizatorii sunt cititi din:
 config/users.cfg
 \end{lstlisting}
 
-Format fisier:
+Format:
 
 \begin{lstlisting}[style=code]
 username:password:role
@@ -151,71 +123,27 @@ username:password:role
 
 \section{Comenzi pentru client normal}
 
-Clientul normal foloseste socket INET TCP.
-
 \subsection{UPLOAD}
-
-Comanda:
 
 \begin{lstlisting}[style=code]
 UPLOAD <filename> <size>
 <file_content>
 \end{lstlisting}
 
-Exemplu:
-
-\begin{lstlisting}[style=code]
-UPLOAD sample.c 582
-\end{lstlisting}
-
-Serverul salveaza fisierul in:
-
-\begin{lstlisting}[style=code]
-uploads/
-\end{lstlisting}
-
-Apoi ruleaza analyzer-ul si trimite rezultatul inapoi ca raspuns \texttt{RESULT}.
+Serverul salveaza fisierul in \texttt{uploads/}, ruleaza analyzer-ul si trimite rezultatul inapoi.
 
 \subsection{DOWNLOAD\_REPORT}
-
-Comanda:
 
 \begin{lstlisting}[style=code]
 DOWNLOAD_REPORT <report_name>
 \end{lstlisting}
 
-Exemplu:
-
-\begin{lstlisting}[style=code]
-DOWNLOAD_REPORT sample_report.txt
-\end{lstlisting}
-
-Serverul cauta raportul in:
-
-\begin{lstlisting}[style=code]
-reports/
-\end{lstlisting}
-
-Daca exista, raspunde cu:
-
-\begin{lstlisting}[style=code]
-FILE sample_report.txt <size>
-<content>
-\end{lstlisting}
+Serverul cauta raportul in \texttt{reports/} si il trimite inapoi cu formatul \texttt{FILE}.
 
 \subsection{QUIT}
 
-Comanda:
-
 \begin{lstlisting}[style=code]
 QUIT
-\end{lstlisting}
-
-Raspuns:
-
-\begin{lstlisting}[style=code]
-RESULT <size>
-BYE
 \end{lstlisting}
 
 \section{Comenzi pentru admin}
@@ -226,167 +154,141 @@ Clientul admin foloseste socket UNIX:
 /tmp/t17_admin.sock
 \end{lstlisting}
 
-Comenzile admin sunt acceptate doar daca:
-
-\begin{itemize}
-    \item conexiunea vine prin socket UNIX;
-    \item rolul utilizatorului este \texttt{admin}.
-\end{itemize}
-
-\subsection{STATS}
-
-Comanda:
+Comenzile admin sunt acceptate doar daca conexiunea vine prin socket UNIX si rolul este \texttt{admin}.
 
 \begin{lstlisting}[style=code]
 STATS
-\end{lstlisting}
-
-Descriere: afiseaza statistici simple despre server.
-
-Exemplu raspuns:
-
-\begin{lstlisting}[style=code]
-Server status: running
-Analyzed files: 18
-Last file: sample.c
-\end{lstlisting}
-
-\subsection{LOGS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 LOGS
-\end{lstlisting}
-
-Descriere: afiseaza continutul fisierului:
-
-\begin{lstlisting}[style=code]
-logs/server.log
-\end{lstlisting}
-
-\subsection{LIST\_UPLOADS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 LIST_UPLOADS
-\end{lstlisting}
-
-Descriere: listeaza fisierele din directorul:
-
-\begin{lstlisting}[style=code]
-uploads/
-\end{lstlisting}
-
-\subsection{LIST\_REPORTS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 LIST_REPORTS
-\end{lstlisting}
-
-Descriere: listeaza rapoartele din directorul:
-
-\begin{lstlisting}[style=code]
-reports/
-\end{lstlisting}
-
-\subsection{SERVER\_STATUS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 SERVER_STATUS
-\end{lstlisting}
-
-Descriere: afiseaza informatii despre configuratia serverului.
-
-Exemplu raspuns:
-
-\begin{lstlisting}[style=code]
-Server status: running
-INET socket: 127.0.0.1:8080
-UNIX admin socket: /tmp/t17_admin.sock
-Connection model: select() + fork() per client
-Normal clients: C client and Python client over INET TCP
-Admin client: UNIX domain socket
-\end{lstlisting}
-
-\subsection{CLEAR\_LOGS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 CLEAR_LOGS
-\end{lstlisting}
-
-Descriere: goleste fisierul:
-
-\begin{lstlisting}[style=code]
-logs/server.log
-\end{lstlisting}
-
-\subsection{DELETE\_REPORT}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 DELETE_REPORT <report_name>
-\end{lstlisting}
-
-Exemplu:
-
-\begin{lstlisting}[style=code]
-DELETE_REPORT sample_report.txt
-\end{lstlisting}
-
-Descriere: sterge raportul specificat din directorul \texttt{reports/}.
-
-\subsection{LIST\_USERS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 LIST_USERS
-\end{lstlisting}
-
-Descriere: listeaza utilizatorii configurati, fara a afisa parolele.
-
-Exemplu raspuns:
-
-\begin{lstlisting}[style=code]
-Configured users:
-- user1 : user
-- admin : admin
-\end{lstlisting}
-
-\subsection{JOBS}
-
-Comanda:
-
-\begin{lstlisting}[style=code]
 JOBS
+QUIT
 \end{lstlisting}
 
-Descriere: afiseaza istoricul joburilor de analiza din:
+\section{REST API}
+
+REST API-ul ruleaza separat:
 
 \begin{lstlisting}[style=code]
-logs/jobs.log
+python3 rest_api/app.py
 \end{lstlisting}
 
-Exemplu raspuns:
+Adresa:
 
 \begin{lstlisting}[style=code]
-[2026-06-12 12:17:08] sample.c QUEUED
-[2026-06-12 12:17:08] sample.c RUNNING
-[2026-06-12 12:17:09] sample.c DONE
+http://127.0.0.1:8081
 \end{lstlisting}
 
-\section{Coduri de eroare}
+Endpoint-uri disponibile:
 
-Erorile sunt trimise tot ca raspuns \texttt{RESULT}.
+\begin{lstlisting}[style=code]
+GET /
+GET /health
+GET /stats
+GET /reports
+GET /reports/<name>
+GET /uploads
+GET /jobs
+GET /users
+GET /logs
+GET /ui
+\end{lstlisting}
+
+REST API-ul intoarce raspunsuri JSON si citeste date din:
+
+\begin{itemize}
+    \item \texttt{logs/stats.txt};
+    \item \texttt{logs/jobs.log};
+    \item \texttt{logs/server.log};
+    \item \texttt{reports/};
+    \item \texttt{uploads/};
+    \item \texttt{config/users.cfg}.
+\end{itemize}
+
+Testare:
+
+\begin{lstlisting}[style=code]
+./scripts/test_rest.sh
+curl http://127.0.0.1:8081/health
+curl http://127.0.0.1:8081/stats
+curl http://127.0.0.1:8081/reports
+\end{lstlisting}
+
+\section{SOAP API}
+
+SOAP API-ul ruleaza separat:
+
+\begin{lstlisting}[style=code]
+python3 soap_api/soap_server.py
+\end{lstlisting}
+
+Endpoint SOAP:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082/soap
+\end{lstlisting}
+
+Document WSDL:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082/wsdl
+\end{lstlisting}
+
+Operatii SOAP suportate:
+
+\begin{lstlisting}[style=code]
+Health
+Stats
+Reports
+Uploads
+Jobs
+Users
+Logs
+\end{lstlisting}
+
+SOAP API-ul primeste cereri XML in format SOAP Envelope si intoarce raspunsuri XML tot in format SOAP Envelope.
+
+Exemplu cerere SOAP:
+
+\begin{lstlisting}[style=code]
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <Health/>
+  </soap:Body>
+</soap:Envelope>
+\end{lstlisting}
+
+Exemplu raspuns SOAP:
+
+\begin{lstlisting}[style=code]
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <HealthResponse>
+      <status>running</status>
+      <service>T17 SOAP API</service>
+      <host>127.0.0.1</host>
+      <port>8082</port>
+    </HealthResponse>
+  </soap:Body>
+</soap:Envelope>
+\end{lstlisting}
+
+Testare:
+
+\begin{lstlisting}[style=code]
+./scripts/test_soap.sh
+curl http://127.0.0.1:8082/wsdl
+\end{lstlisting}
+
+\section{Coduri de eroare socket}
+
+Erorile socket sunt trimise ca raspuns \texttt{RESULT}.
 
 Exemple:
 
@@ -401,49 +303,8 @@ ERROR: cannot delete report
 ERROR: report file not found
 \end{lstlisting}
 
-\section{Exemple de fluxuri}
-
-\subsection{Flux upload}
-
-\begin{lstlisting}[style=code]
-Client -> Server:
-LOGIN user1 pass1
-
-Server -> Client:
-RESULT 13
-OK role=user
-
-Client -> Server:
-UPLOAD sample.c 582
-<file bytes>
-
-Server -> Client:
-RESULT <size>
-<analysis result>
-\end{lstlisting}
-
-\subsection{Flux admin}
-
-\begin{lstlisting}[style=code]
-Admin -> Server:
-LOGIN admin admin123
-
-Server -> Admin:
-RESULT 14
-OK role=admin
-
-Admin -> Server:
-JOBS
-
-Server -> Admin:
-RESULT <size>
-[2026-06-12 12:17:08] sample.c QUEUED
-[2026-06-12 12:17:08] sample.c RUNNING
-[2026-06-12 12:17:09] sample.c DONE
-\end{lstlisting}
-
 \section{Concluzie}
 
-Protocolul este simplu, text-based si usor de testat. Clientii normali folosesc comunicare INET TCP, iar administrarea se face separat prin socket UNIX. Aceasta separare face proiectul mai clar si permite demonstrarea mai multor mecanisme de programare concurenta si distribuita.
+Protocolul socket este simplu, text-based si usor de testat. Clientii normali folosesc comunicare INET TCP, iar administrarea se face separat prin socket UNIX. In plus, proiectul include REST API minimal cu raspunsuri JSON si SOAP API minimal cu raspunsuri XML/WSDL.
 
 \end{document}

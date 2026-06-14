@@ -32,25 +32,27 @@
 
 Acest document contine specificatia cerintelor software si descrierea de proiectare pentru aplicatia T17 - Analiza Semantica Cod Sursa. Proiectul este realizat pentru disciplina Programare Concurenta si Distribuita si are ca scop implementarea unei aplicatii client-server care permite incarcarea unor fisiere sursa C, analiza lor cu ajutorul bibliotecii libclang si generarea unor rapoarte text.
 
-Aplicatia foloseste comunicare prin socket-uri, procese multiple, autentificare, transfer de fisiere, generare de rapoarte, operatii de administrare si monitorizare a directorului de rapoarte.
+Aplicatia foloseste comunicare prin socket-uri INET si UNIX, procese multiple, autentificare, transfer de fisiere, generare de rapoarte, operatii de administrare, monitorizare cu inotify, REST API minimal si SOAP API minimal.
 
 \section{Scopul proiectului}
 
-Scopul proiectului este realizarea unui sistem distribuit simplu, dar complet functional, care permite:
+Scopul proiectului este realizarea unui sistem distribuit local care permite:
 
 \begin{itemize}
     \item incarcarea unui fisier sursa C de la client catre server;
     \item analiza fisierului folosind libclang;
-    \item generarea unui raport cu informatii despre cod;
+    \item generarea unui raport text;
     \item descarcarea raportului de catre client;
     \item administrarea serverului printr-un client separat;
     \item folosirea socket-urilor INET si UNIX;
-    \item folosirea mecanismelor \texttt{fork()}, \texttt{exec()}, \texttt{pipe()}, \texttt{select()} si \texttt{inotify}.
+    \item folosirea mecanismelor \texttt{select()}, \texttt{fork()}, \texttt{exec()}, \texttt{pipe()} si \texttt{inotify};
+    \item expunerea unor date prin REST API;
+    \item expunerea unor date prin SOAP API si WSDL.
 \end{itemize}
 
 \section{Domeniul aplicatiei}
 
-Aplicatia este destinata analizei statice a fisierelor C. Sistemul nu executa codul primit, ci il parseaza si extrage informatii relevante despre structura si posibile probleme din cod.
+Aplicatia este destinata analizei statice a fisierelor C. Sistemul nu executa codul primit de la client, ci il parseaza si extrage informatii relevante despre structura si posibile probleme din cod.
 
 Analiza include:
 
@@ -61,7 +63,7 @@ Analiza include:
     \item numar de instructiuni \texttt{for};
     \item numar de instructiuni \texttt{while};
     \item diagnostice generate de libclang;
-    \item mesaje de warning sau error pentru cod problematic.
+    \item mesaje de tip warning sau error.
 \end{itemize}
 
 \section{Descriere generala}
@@ -69,6 +71,16 @@ Analiza include:
 Sistemul are o arhitectura client-server. Clientii normali comunica cu serverul printr-un socket INET TCP pe adresa \texttt{127.0.0.1:8080}. Clientul admin comunica separat printr-un socket UNIX local, folosind calea \texttt{/tmp/t17\_admin.sock}.
 
 Serverul asteapta conexiuni folosind \texttt{select()} pentru a monitoriza simultan socket-ul TCP si socket-ul UNIX. Pentru fiecare conexiune acceptata, serverul creeaza un proces copil cu \texttt{fork()}, iar procesul copil trateaza clientul respectiv.
+
+Pe langa comunicarea prin socket-uri, proiectul include:
+
+\begin{itemize}
+    \item REST API minimal pe \texttt{127.0.0.1:8081};
+    \item SOAP API minimal pe \texttt{127.0.0.1:8082};
+    \item WSDL disponibil la \texttt{http://127.0.0.1:8082/wsdl}.
+\end{itemize}
+
+Aceste API-uri nu inlocuiesc serverul principal, ci expun prin HTTP datele generate de server: status, statistici, rapoarte, upload-uri, joburi, useri si loguri.
 
 \section{Cerinte functionale}
 
@@ -102,7 +114,7 @@ Serverul asteapta conexiuni folosind \texttt{select()} pentru a monitoriza simul
 
 \begin{enumerate}[label=CF\arabic*., resume]
     \item Clientul normal trebuie sa se conecteze prin socket INET TCP.
-    \item Clientul normal trebuie sa trimita credentiale de autentificare.
+    \item Clientul normal trebuie sa trimita automat o comanda de autentificare.
     \item Clientul normal trebuie sa poata incarca fisiere C catre server.
     \item Clientul normal trebuie sa primeasca rezultatul analizei de la server.
     \item Clientul normal trebuie sa poata descarca rapoarte generate anterior.
@@ -132,16 +144,38 @@ Serverul asteapta conexiuni folosind \texttt{select()} pentru a monitoriza simul
     \item Programul trebuie sa afiseze evenimente precum creare, modificare, scriere si stergere de rapoarte.
 \end{enumerate}
 
+\subsection{Cerinte pentru REST API}
+
+\begin{enumerate}[label=CF\arabic*., resume]
+    \item Aplicatia trebuie sa includa un REST API minimal.
+    \item REST API-ul trebuie sa ruleze local pe \texttt{127.0.0.1:8081}.
+    \item REST API-ul trebuie sa expuna endpoint-uri pentru health, statistici, rapoarte, upload-uri, joburi, useri si loguri.
+    \item REST API-ul trebuie sa includa o interfata web minimala la \texttt{/ui}.
+    \item REST API-ul trebuie sa aiba specificatie OpenAPI in \texttt{docs/openapi.yaml}.
+\end{enumerate}
+
+\subsection{Cerinte pentru SOAP API}
+
+\begin{enumerate}[label=CF\arabic*., resume]
+    \item Aplicatia trebuie sa includa un SOAP API minimal.
+    \item SOAP API-ul trebuie sa ruleze local pe \texttt{127.0.0.1:8082}.
+    \item SOAP API-ul trebuie sa expuna endpoint-ul \texttt{/soap}.
+    \item SOAP API-ul trebuie sa ofere un document WSDL la \texttt{/wsdl}.
+    \item SOAP API-ul trebuie sa suporte operatii pentru health, statistici, rapoarte, upload-uri, joburi, useri si loguri.
+\end{enumerate}
+
 \section{Cerinte nefunctionale}
 
 \begin{enumerate}[label=CNF\arabic*.]
-    \item Codul trebuie sa fie scris in C pentru componentele principale.
+    \item Codul principal trebuie sa fie scris in C.
     \item Proiectul trebuie sa compileze fara warning-uri folosind \texttt{-Wall -Wextra -Werror -pedantic}.
     \item Comunicarea client-server trebuie sa fie stabila pentru fisiere de dimensiuni moderate.
     \item Serverul trebuie sa poata trata mai multi clienti prin procese copil.
     \item Rapoartele si logurile trebuie salvate local in directoare separate.
     \item Clientul admin trebuie separat logic de clientul normal.
     \item Documentatia oficiala trebuie scrisa in LaTeX.
+    \item REST API-ul trebuie sa poata fi testat prin \texttt{scripts/test\_rest.sh}.
+    \item SOAP API-ul trebuie sa poata fi testat prin \texttt{scripts/test\_soap.sh}.
 \end{enumerate}
 
 \section{Arhitectura sistemului}
@@ -156,64 +190,62 @@ Client Python        /
 Admin Client C       -> UNIX socket /tmp/t17_admin.sock -> Server
 
 Watch Reports        -> inotify -> reports/
+
+REST API             -> HTTP 127.0.0.1:8081 -> logs/, reports/, uploads/, config/
+
+SOAP API             -> HTTP 127.0.0.1:8082 -> logs/, reports/, uploads/, config/
 \end{lstlisting}
 
-Serverul are doua puncte de intrare:
+Serverul principal are doua puncte de intrare:
 
 \begin{itemize}
     \item socket INET TCP pentru clientii normali;
     \item socket UNIX local pentru clientul admin.
 \end{itemize}
 
+REST API-ul si SOAP API-ul sunt componente separate, folosite pentru a expune prin HTTP informatii deja generate de serverul principal.
+
 \section{Componente software}
 
 \subsection{\texttt{src/analyzer.c}}
 
-Componenta \texttt{analyzer.c} foloseste libclang pentru a analiza fisiere C. Aceasta componenta primeste fisierul prin argumente de linie de comanda si afiseaza rezultatul analizei la \texttt{stdout}. Serverul captureaza acest output prin pipe.
+Componenta care foloseste libclang pentru analiza fisierelor C. Primeste fisierul prin argumente de linie de comanda si afiseaza rezultatul la \texttt{stdout}. Serverul captureaza acest output prin pipe.
 
 \subsection{\texttt{src/server.c}}
 
-Componenta principala a sistemului. Serverul:
-
-\begin{itemize}
-    \item creeaza socket-ul INET pentru clientii normali;
-    \item creeaza socket-ul UNIX pentru admin;
-    \item foloseste \texttt{select()} pentru a astepta conexiuni;
-    \item foloseste \texttt{fork()} pentru clienti;
-    \item autentifica utilizatorii;
-    \item primeste fisiere;
-    \item ruleaza analyzer-ul;
-    \item salveaza rapoarte;
-    \item gestioneaza comenzi admin.
-\end{itemize}
+Serverul principal. Creeaza socket-ul INET, socket-ul UNIX, foloseste \texttt{select()}, accepta clienti, foloseste \texttt{fork()}, autentifica utilizatori, primeste fisiere, ruleaza analyzer-ul si gestioneaza comenzile admin.
 
 \subsection{\texttt{src/client.c}}
 
-Clientul C normal permite upload-ul fisierelor si descarcarea rapoartelor. Acesta comunica prin TCP cu serverul.
+Clientul C normal pentru upload de fisiere si download de rapoarte.
 
 \subsection{\texttt{src/admin\_client.c}}
 
-Clientul admin comunica prin socket UNIX si permite operatii de administrare:
-
-\begin{itemize}
-    \item \texttt{STATS};
-    \item \texttt{LOGS};
-    \item \texttt{LIST\_UPLOADS};
-    \item \texttt{LIST\_REPORTS};
-    \item \texttt{SERVER\_STATUS};
-    \item \texttt{CLEAR\_LOGS};
-    \item \texttt{DELETE\_REPORT};
-    \item \texttt{LIST\_USERS};
-    \item \texttt{JOBS}.
-\end{itemize}
+Clientul admin C, conectat prin socket UNIX. Permite operatii precum statistici, loguri, listare rapoarte, listare useri, joburi si stergere rapoarte.
 
 \subsection{\texttt{python\_client/client.py}}
 
-Clientul Python este o alternativa la clientul C si demonstreaza interoperabilitatea protocolului TCP.
+Client alternativ in Python pentru upload si download prin acelasi protocol TCP.
 
 \subsection{\texttt{src/watch\_reports.c}}
 
-Program separat care foloseste \texttt{inotify} pentru monitorizarea directorului \texttt{reports/}. Acesta afiseaza evenimente atunci cand rapoartele sunt create, modificate sau sterse.
+Program separat care foloseste \texttt{inotify} pentru monitorizarea directorului \texttt{reports/}.
+
+\subsection{\texttt{rest\_api/app.py}}
+
+REST API minimal implementat in Python. Ruleaza pe \texttt{127.0.0.1:8081} si expune date in format JSON.
+
+\subsection{\texttt{soap\_api/soap\_server.py}}
+
+SOAP API minimal implementat in Python. Ruleaza pe \texttt{127.0.0.1:8082}, expune endpoint-ul \texttt{/soap} si documentul WSDL la \texttt{/wsdl}.
+
+\subsection{\texttt{scripts/test\_rest.sh}}
+
+Script pentru testarea endpoint-urilor REST cu \texttt{curl}.
+
+\subsection{\texttt{scripts/test\_soap.sh}}
+
+Script pentru testarea operatiilor SOAP cu request-uri XML trimise prin \texttt{curl}.
 
 \section{Structura proiectului}
 
@@ -231,6 +263,13 @@ Proiect_PCD/
 |   |-- openapi.yaml
 |-- python_client/
 |   |-- client.py
+|-- rest_api/
+|   |-- app.py
+|-- soap_api/
+|   |-- soap_server.py
+|-- scripts/
+|   |-- test_rest.sh
+|   |-- test_soap.sh
 |-- src/
 |   |-- analyzer.c
 |   |-- main.c
@@ -247,26 +286,14 @@ Proiect_PCD/
 |   |-- good_math.c
 |   |-- good_nested.c
 |   |-- good_while.c
-|-- uploads/
-|-- reports/
-|-- logs/
-|-- downloads/
-|-- downloads_py/
 \end{lstlisting}
 
-\section{Protocol de comunicare}
+\section{Protocol socket}
 
-Protocolul este text-based. Fiecare client trimite mai intai o comanda de login:
+Protocolul socket este text-based. Fiecare client trimite mai intai:
 
 \begin{lstlisting}[style=code]
 LOGIN <username> <password>
-\end{lstlisting}
-
-Serverul raspunde cu:
-
-\begin{lstlisting}[style=code]
-RESULT <size>
-OK role=<role>
 \end{lstlisting}
 
 Clientii normali pot folosi:
@@ -292,13 +319,77 @@ JOBS
 QUIT
 \end{lstlisting}
 
+\section{REST API}
+
+REST API-ul ruleaza separat de serverul TCP/UNIX:
+
+\begin{lstlisting}[style=code]
+python3 rest_api/app.py
+\end{lstlisting}
+
+Adresa locala:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8081
+\end{lstlisting}
+
+Endpoint-uri disponibile:
+
+\begin{itemize}
+    \item \texttt{GET /health};
+    \item \texttt{GET /stats};
+    \item \texttt{GET /reports};
+    \item \texttt{GET /reports/<name>};
+    \item \texttt{GET /uploads};
+    \item \texttt{GET /jobs};
+    \item \texttt{GET /users};
+    \item \texttt{GET /logs};
+    \item \texttt{GET /ui}.
+\end{itemize}
+
+REST API-ul intoarce raspunsuri JSON.
+
+\section{SOAP API}
+
+SOAP API-ul ruleaza separat:
+
+\begin{lstlisting}[style=code]
+python3 soap_api/soap_server.py
+\end{lstlisting}
+
+Endpoint SOAP:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082/soap
+\end{lstlisting}
+
+Document WSDL:
+
+\begin{lstlisting}[style=code]
+http://127.0.0.1:8082/wsdl
+\end{lstlisting}
+
+Operatii SOAP suportate:
+
+\begin{itemize}
+    \item \texttt{Health};
+    \item \texttt{Stats};
+    \item \texttt{Reports};
+    \item \texttt{Uploads};
+    \item \texttt{Jobs};
+    \item \texttt{Users};
+    \item \texttt{Logs}.
+\end{itemize}
+
+SOAP API-ul intoarce raspunsuri XML in format SOAP Envelope.
+
 \section{Fluxuri de executie}
 
 \subsection{Upload si analiza fisier}
 
 \begin{enumerate}
     \item Clientul se conecteaza la server prin TCP.
-    \item Clientul trimite comanda \texttt{LOGIN}.
+    \item Clientul trimite automat comanda \texttt{LOGIN}.
     \item Serverul verifica utilizatorul in \texttt{config/users.cfg}.
     \item Clientul trimite comanda \texttt{UPLOAD}.
     \item Serverul salveaza fisierul in \texttt{uploads/}.
@@ -322,9 +413,28 @@ QUIT
 \subsection{Monitorizare rapoarte}
 
 \begin{enumerate}
-    \item Utilizatorul porneste programul \texttt{watch\_reports}.
+    \item Utilizatorul porneste \texttt{watch\_reports}.
     \item Programul adauga un watch cu \texttt{inotify\_add\_watch()} pe \texttt{reports/}.
     \item Cand apare un raport nou, programul afiseaza evenimentul.
+\end{enumerate}
+
+\subsection{Acces REST}
+
+\begin{enumerate}
+    \item Utilizatorul porneste REST API-ul.
+    \item REST API-ul ruleaza pe \texttt{127.0.0.1:8081}.
+    \item Utilizatorul acceseaza endpoint-uri prin browser sau \texttt{curl}.
+    \item API-ul citeste fisierele generate de server si intoarce JSON.
+\end{enumerate}
+
+\subsection{Acces SOAP}
+
+\begin{enumerate}
+    \item Utilizatorul porneste SOAP API-ul.
+    \item SOAP API-ul ruleaza pe \texttt{127.0.0.1:8082}.
+    \item Utilizatorul trimite cereri XML SOAP catre \texttt{/soap}.
+    \item API-ul citeste fisierele generate de server si intoarce raspuns SOAP XML.
+    \item WSDL-ul poate fi accesat la \texttt{/wsdl}.
 \end{enumerate}
 
 \section{Biblioteci si apeluri folosite}
@@ -357,6 +467,10 @@ Componenta & Utilizare \\
 \hline
 \texttt{libconfig} & citirea configuratiei aplicatiei \\
 \hline
+\texttt{http.server} & REST API si SOAP API minimal in Python \\
+\hline
+\texttt{curl} & testarea endpoint-urilor REST si SOAP \\
+\hline
 \end{longtable}
 
 \section{Date si fisiere generate la runtime}
@@ -372,8 +486,6 @@ Componenta & Utilizare \\
 
 \section{Testare}
 
-Testarea se face prin compilare si rularea componentelor principale.
-
 \subsection{Compilare}
 
 \begin{lstlisting}[style=code]
@@ -381,47 +493,17 @@ make clean
 make
 \end{lstlisting}
 
-\subsection{Pornire server}
+\subsection{Test server si clienti}
 
 \begin{lstlisting}[style=code]
 ./server
-\end{lstlisting}
-
-Output asteptat:
-
-\begin{lstlisting}[style=code]
-INET server running on 127.0.0.1:8080
-UNIX admin socket running on /tmp/t17_admin.sock
-Waiting for clients with select()...
-\end{lstlisting}
-
-\subsection{Test client normal}
-
-\begin{lstlisting}[style=code]
 ./client tests/sample.c
 ./client tests/bad_type.c
 ./client download sample_report.txt
-\end{lstlisting}
-
-\subsection{Test admin client}
-
-\begin{lstlisting}[style=code]
+python3 python_client/client.py upload tests/good_math.c
+python3 python_client/client.py download good_math_report.txt
 ./admin_client
 \end{lstlisting}
-
-Operatii testate:
-
-\begin{itemize}
-    \item afisare statistici;
-    \item afisare loguri;
-    \item listare upload-uri;
-    \item listare rapoarte;
-    \item status server;
-    \item listare utilizatori;
-    \item listare joburi;
-    \item stergere raport;
-    \item stergere loguri.
-\end{itemize}
 
 \subsection{Test inotify}
 
@@ -430,44 +512,47 @@ Operatii testate:
 ./client tests/sample.c
 \end{lstlisting}
 
-Output posibil:
+\subsection{Test REST API}
 
 \begin{lstlisting}[style=code]
-Watching directory: reports
-Waiting for report changes...
-[2026-06-12 12:26:09] report created: sample_report.txt
-[2026-06-12 12:26:09] report modified: sample_report.txt
-[2026-06-12 12:26:09] report written: sample_report.txt
+python3 rest_api/app.py
+./scripts/test_rest.sh
+\end{lstlisting}
+
+\subsection{Test SOAP API}
+
+\begin{lstlisting}[style=code]
+python3 soap_api/soap_server.py
+./scripts/test_soap.sh
+curl http://127.0.0.1:8082/wsdl
 \end{lstlisting}
 
 \section{Limitari curente}
 
-Aplicatia are urmatoarele limitari:
-
 \begin{itemize}
     \item analiza este concentrata pe fisiere C;
-    \item protocolul este simplu, text-based;
-    \item REST este documentat prin OpenAPI, dar implementarea principala este socket-based;
-    \item job tracking-ul este salvat in fisier text, nu intr-o baza de date;
-    \item serverul este destinat pentru testare locala.
+    \item protocolul socket este simplu, text-based;
+    \item REST API-ul si SOAP API-ul sunt minimale si citesc date din fisiere locale;
+    \item job tracking-ul este salvat in fisier text;
+    \item serverul este destinat pentru testare locala;
+    \item autentificarea este simpla si foloseste fisier text.
 \end{itemize}
 
 \section{Directii viitoare}
 
-Directii posibile de dezvoltare:
-
 \begin{itemize}
-    \item implementarea unui REST API real;
-    \item adaugarea unei cozi asincrone reale pentru joburi;
-    \item analiza mai avansata a codului;
-    \item suport mai bun pentru fisiere C++;
-    \item salvarea rezultatelor intr-o baza de date;
-    \item interfata grafica pentru vizualizarea rapoartelor.
+    \item REST API mai complex cu metode POST si DELETE;
+    \item SOAP API mai complet;
+    \item coada asincrona reala pentru joburi;
+    \item baza de date pentru useri, rapoarte si joburi;
+    \item hashing pentru parole;
+    \item suport mai bun pentru C++;
+    \item interfata web mai dezvoltata.
 \end{itemize}
 
 \section{Concluzie}
 
-Proiectul implementeaza o aplicatie client-server functionala pentru analiza semantica a codului sursa C. Sistemul foloseste socket-uri INET pentru clientii normali, socket UNIX pentru administrare, \texttt{select()} pentru monitorizarea mai multor socket-uri, \texttt{fork()} pentru concurenta, \texttt{exec()} si \texttt{pipe()} pentru rularea analyzer-ului, precum si \texttt{inotify} pentru monitorizarea rapoartelor generate.
+Proiectul implementeaza o aplicatie client-server functionala pentru analiza semantica a codului sursa C. Sistemul foloseste socket-uri INET pentru clientii normali, socket UNIX pentru administrare, \texttt{select()} pentru monitorizarea mai multor socket-uri, \texttt{fork()} pentru concurenta, \texttt{exec()} si \texttt{pipe()} pentru rularea analyzer-ului, \texttt{inotify} pentru monitorizarea rapoartelor generate, REST API si SOAP API pentru expunerea datelor prin HTTP.
 
 Prin aceste functionalitati, proiectul acopera cerinte importante din zona de programare concurenta si distribuita.
 

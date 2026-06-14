@@ -28,3 +28,7 @@ downloads_py/*
 *.synctex.gz
 
 watch_reports
+
+__pycache__/
+*.pyc
+rest_api/__pycache__/

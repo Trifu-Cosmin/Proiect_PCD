@@ -1,340 +1,89 @@
 openapi: 3.0.3
-
 info:
-  title: T17 Semantic Analysis API
+  title: T17 Semantic Source Code Analysis API
   version: 1.0.0
-  description: Specificatie OpenAPI pentru proiectul T17 - Analiza Semantica Cod Sursa.
+  description: Minimal REST API for the T17 PCD project. The main application uses TCP and UNIX sockets, while this REST API exposes project status, reports, jobs, users and logs.
 
 servers:
-  - url: http://localhost:8080
-    description: Server local pentru analiza codului sursa
+  - url: http://127.0.0.1:8081
+    description: Local REST API server
 
 paths:
-  /auth/login:
-    post:
-      summary: Autentifica un utilizator
-      description: Primeste username si password si intoarce rolul utilizatorului.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-      responses:
-        '200':
-          description: Autentificare reusita
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          description: Date de autentificare invalide
-
-  /analyze:
-    post:
-      summary: Analizeaza un fisier sursa
-      description: Primeste un fisier sursa C/C++ si intoarce un raport de analiza.
-      security:
-        - basicAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required:
-                - sourceFile
-              properties:
-                sourceFile:
-                  type: string
-                  format: binary
-      responses:
-        '200':
-          description: Analiza realizata cu succes
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnalysisResult'
-        '400':
-          description: Cerere invalida
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Utilizator neautentificat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Eroare interna la analiza
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /reports/{reportId}:
+  /:
     get:
-      summary: Returneaza un raport de analiza
-      description: Intoarce raportul generat pentru o analiza anterioara.
-      security:
-        - basicAuth: []
-      parameters:
-        - name: reportId
-          in: path
-          required: true
-          description: Numele sau identificatorul raportului.
-          schema:
-            type: string
-          example: sample_report.txt
+      summary: List available REST endpoints
       responses:
-        '200':
-          description: Raport returnat cu succes
-          content:
-            text/plain:
-              schema:
-                type: string
-              example: |
-                === Analysis Result ===
-                Project: PCD T17 Semantic Analyzer
-                Source file: uploads/sample.c
-                Diagnostics count: 0
-                Functions count: 3
-        '401':
-          description: Utilizator neautentificat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Raportul nu a fost gasit
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /admin/stats:
-    get:
-      summary: Returneaza statistici server
-      description: Intoarce statusul serverului, numarul de fisiere analizate si ultimul fisier analizat.
-      security:
-        - basicAuth: []
-      responses:
-        '200':
-          description: Statistici returnate cu succes
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServerStats'
-        '401':
-          description: Utilizator neautentificat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Permisiuni insuficiente
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /admin/logs:
-    get:
-      summary: Returneaza logurile serverului
-      description: Intoarce continutul fisierului logs/server.log.
-      security:
-        - basicAuth: []
-      responses:
-        '200':
-          description: Loguri returnate cu succes
-          content:
-            text/plain:
-              schema:
-                type: string
-              example: |
-                [2026-05-13 14:54:29] INFO Concurrent server started on 127.0.0.1:8080
-                [2026-05-13 14:54:39] INFO Client connected in child process
-                [2026-05-13 14:54:39] INFO Authentication successful for user: user1, role: user
-        '401':
-          description: Utilizator neautentificat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Permisiuni insuficiente
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /admin/uploads:
-    get:
-      summary: Listeaza fisierele uploadate
-      description: Intoarce lista fisierelor din directorul uploads.
-      security:
-        - basicAuth: []
-      responses:
-        '200':
-          description: Lista returnata cu succes
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FileList'
-        '401':
-          description: Utilizator neautentificat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Permisiuni insuficiente
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /admin/reports:
-    get:
-      summary: Listeaza rapoartele generate
-      description: Intoarce lista fisierelor din directorul reports.
-      security:
-        - basicAuth: []
-      responses:
-        '200':
-          description: Lista returnata cu succes
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FileList'
-        '401':
-          description: Utilizator neautentificat
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Permisiuni insuficiente
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+        "200":
+          description: API endpoint list
 
   /health:
     get:
-      summary: Verifica daca serverul ruleaza
-      description: Endpoint simplu pentru verificarea statusului serverului.
+      summary: Check REST API health
       responses:
-        '200':
-          description: Server functional
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HealthResponse'
+        "200":
+          description: REST API is running
 
-components:
-  securitySchemes:
-    basicAuth:
-      type: http
-      scheme: basic
+  /stats:
+    get:
+      summary: Get server statistics
+      responses:
+        "200":
+          description: Returns analyzed file count and last analyzed file
 
-  schemas:
-    LoginRequest:
-      type: object
-      required:
-        - username
-        - password
-      properties:
-        username:
-          type: string
-          example: user1
-        password:
-          type: string
-          example: pass1
+  /reports:
+    get:
+      summary: List generated reports
+      responses:
+        "200":
+          description: Returns files from the reports directory
 
-    LoginResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          example: ok
-        role:
-          type: string
-          example: user
-
-    AnalysisResult:
-      type: object
-      properties:
-        project:
-          type: string
-          example: PCD T17 Semantic Analyzer
-        sourceFile:
-          type: string
-          example: sample.c
-        diagnosticsCount:
-          type: integer
-          example: 0
-        functionsCount:
-          type: integer
-          example: 3
-        variablesCount:
-          type: integer
-          example: 8
-        ifStatementsCount:
-          type: integer
-          example: 1
-        forLoopsCount:
-          type: integer
-          example: 1
-        whileLoopsCount:
-          type: integer
-          example: 0
-        diagnostics:
-          type: array
-          items:
+  /reports/{name}:
+    get:
+      summary: Get report content
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
             type: string
-          example:
-            - "Nu exista diagnostice."
-        reportName:
-          type: string
-          example: sample_report.txt
+          description: Report filename
+      responses:
+        "200":
+          description: Report content
+        "404":
+          description: Report not found
 
-    ServerStats:
-      type: object
-      properties:
-        status:
-          type: string
-          example: running
-        analyzedFiles:
-          type: integer
-          example: 2
-        lastFile:
-          type: string
-          example: sample.c
+  /uploads:
+    get:
+      summary: List uploaded files
+      responses:
+        "200":
+          description: Returns files from the uploads directory
 
-    FileList:
-      type: object
-      properties:
-        files:
-          type: array
-          items:
-            type: string
-          example:
-            - sample.c
-            - bad.c
+  /jobs:
+    get:
+      summary: List analysis jobs
+      responses:
+        "200":
+          description: Returns job history from logs/jobs.log
 
-    HealthResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          example: running
+  /users:
+    get:
+      summary: List configured users without passwords
+      responses:
+        "200":
+          description: Returns usernames and roles from config/users.cfg
 
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-          example: permission denied
+  /logs:
+    get:
+      summary: Show recent server logs
+      responses:
+        "200":
+          description: Returns recent lines from logs/server.log
+
+  /ui:
+    get:
+      summary: Simple browser UI for the REST API
+      responses:
+        "200":
+          description: HTML page with buttons for REST endpoints

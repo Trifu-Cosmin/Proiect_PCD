@@ -4,6 +4,8 @@ Proiect pentru disciplina **Programare Concurenta si Distribuita**.
 
 Aplicatia implementeaza un sistem client-server pentru analiza statica a fisierelor sursa C. Clientii pot trimite fisiere catre server, serverul ruleaza un analyzer bazat pe `libclang`, genereaza rapoarte text si permite administrarea printr-un client separat.
 
+Proiectul include si API-uri minimale REST si SOAP pentru expunerea prin HTTP a informatiilor generate de server: statistici, rapoarte, upload-uri, joburi, useri si loguri.
+
 ---
 
 ## Functionalitati principale
@@ -22,7 +24,12 @@ Aplicatia implementeaza un sistem client-server pentru analiza statica a fisiere
 - statistici in `logs/stats.txt`;
 - job tracking in `logs/jobs.log`;
 - monitorizare `reports/` cu `inotify`;
-- server concurent cu `select()` si `fork()`.
+- server concurent cu `select()` si `fork()`;
+- REST API minimal;
+- SOAP API minimal;
+- WSDL pentru SOAP;
+- script de test pentru REST;
+- script de test pentru SOAP.
 
 ---
 
@@ -36,6 +43,10 @@ Client Python        /
 Admin Client C       -> UNIX socket /tmp/t17_admin.sock -> Server
 
 Watch Reports        -> inotify -> reports/
+
+REST API             -> HTTP 127.0.0.1:8081 -> logs/, reports/, uploads/, config/
+
+SOAP API             -> HTTP 127.0.0.1:8082 -> logs/, reports/, uploads/, config/
 ```
 
 Serverul asculta simultan pe doua socket-uri:
@@ -44,6 +55,10 @@ Serverul asculta simultan pe doua socket-uri:
 - `/tmp/t17_admin.sock` pentru clientul admin.
 
 Serverul foloseste `select()` pentru a monitoriza ambele socket-uri si `fork()` pentru a trata fiecare client intr-un proces separat.
+
+REST API-ul ruleaza separat pe `127.0.0.1:8081` si expune raspunsuri JSON.
+
+SOAP API-ul ruleaza separat pe `127.0.0.1:8082`, expune endpoint-ul `/soap` si WSDL la `/wsdl`.
 
 ---
 
@@ -61,7 +76,12 @@ Serverul foloseste `select()` pentru a monitoriza ambele socket-uri si `fork()` 
 - `inotify`
 - `libclang`
 - `libconfig`
+- REST API cu `http.server`
+- SOAP API minimal
+- WSDL
 - Makefile
+- OpenAPI
+- curl
 
 ---
 
@@ -81,6 +101,13 @@ Proiect_PCD/
 │   └── openapi.yaml
 ├── python_client/
 │   └── client.py
+├── rest_api/
+│   └── app.py
+├── soap_api/
+│   └── soap_server.py
+├── scripts/
+│   ├── test_rest.sh
+│   └── test_soap.sh
 ├── src/
 │   ├── analyzer.c
 │   ├── main.c
@@ -114,10 +141,8 @@ Pe Ubuntu / WSL:
 
 ```bash
 sudo apt update
-sudo apt install build-essential libclang-dev libconfig-dev python3
+sudo apt install build-essential libclang-dev libconfig-dev python3 curl
 ```
-
-Proiectul foloseste `libclang` si `libconfig`.
 
 In Makefile este folosita calea pentru LLVM 18:
 
@@ -152,8 +177,6 @@ watch_reports
 
 ## Rulare server
 
-Pornire server:
-
 ```bash
 ./server
 ```
@@ -165,8 +188,6 @@ INET server running on 127.0.0.1:8080
 UNIX admin socket running on /tmp/t17_admin.sock
 Waiting for clients with select()...
 ```
-
-Serverul trebuie lasat pornit intr-un terminal separat.
 
 ---
 
@@ -190,12 +211,6 @@ Download raport:
 ./client download sample_report.txt
 ```
 
-Rapoartele descarcate de clientul C sunt salvate in:
-
-```txt
-downloads/
-```
-
 ---
 
 ## Client Python
@@ -203,19 +218,13 @@ downloads/
 Upload fisier:
 
 ```bash
-python3 python_client/client.py upload tests/sample.c
+python3 python_client/client.py upload tests/good_math.c
 ```
 
 Download raport:
 
 ```bash
-python3 python_client/client.py download sample_report.txt
-```
-
-Rapoartele descarcate de clientul Python sunt salvate in:
-
-```txt
-downloads_py/
+python3 python_client/client.py download good_math_report.txt
 ```
 
 ---
@@ -249,40 +258,21 @@ Meniu admin:
 10. Quit
 ```
 
-Comenzi admin implementate:
-
-| Optiune | Comanda trimisa | Descriere |
-|---|---|---|
-| 1 | `STATS` | Afiseaza statistici despre fisiere analizate |
-| 2 | `LOGS` | Afiseaza logurile serverului |
-| 3 | `LIST_UPLOADS` | Listeaza fisierele incarcate |
-| 4 | `LIST_REPORTS` | Listeaza rapoartele generate |
-| 5 | `SERVER_STATUS` | Afiseaza configuratia serverului |
-| 6 | `CLEAR_LOGS` | Goleste logurile serverului |
-| 7 | `DELETE_REPORT <name>` | Sterge un raport |
-| 8 | `LIST_USERS` | Listeaza userii fara parole |
-| 9 | `JOBS` | Afiseaza istoricul joburilor |
-| 10 | `QUIT` | Inchide conexiunea |
-
 ---
 
 ## Monitorizare rapoarte cu inotify
-
-Programul `watch_reports` monitorizeaza directorul `reports/`.
-
-Pornire:
 
 ```bash
 ./watch_reports
 ```
 
-Apoi, intr-un alt terminal, se ruleaza un client:
+Apoi, intr-un alt terminal:
 
 ```bash
 ./client tests/sample.c
 ```
 
-Output posibil in watcher:
+Output posibil:
 
 ```txt
 Watching directory: reports
@@ -290,6 +280,90 @@ Waiting for report changes...
 [2026-06-12 12:26:09] report created: sample_report.txt
 [2026-06-12 12:26:09] report modified: sample_report.txt
 [2026-06-12 12:26:09] report written: sample_report.txt
+```
+
+---
+
+## REST API minimal
+
+Pornire:
+
+```bash
+python3 rest_api/app.py
+```
+
+Adresa:
+
+```txt
+http://127.0.0.1:8081
+```
+
+Endpoint-uri:
+
+```txt
+GET /
+GET /health
+GET /stats
+GET /reports
+GET /reports/<name>
+GET /uploads
+GET /jobs
+GET /users
+GET /logs
+GET /ui
+```
+
+Interfata web simpla:
+
+```txt
+http://127.0.0.1:8081/ui
+```
+
+Test:
+
+```bash
+./scripts/test_rest.sh
+```
+
+---
+
+## SOAP API minimal
+
+Pornire:
+
+```bash
+python3 soap_api/soap_server.py
+```
+
+Endpoint SOAP:
+
+```txt
+http://127.0.0.1:8082/soap
+```
+
+WSDL:
+
+```txt
+http://127.0.0.1:8082/wsdl
+```
+
+Operatii SOAP:
+
+```txt
+Health
+Stats
+Reports
+Uploads
+Jobs
+Users
+Logs
+```
+
+Test:
+
+```bash
+./scripts/test_soap.sh
+curl http://127.0.0.1:8082/wsdl
 ```
 
 ---
@@ -304,7 +378,7 @@ Exemplu rulare directa:
 ./analyzer -f tests/sample.c -v
 ```
 
-Analyzer-ul extrage informatii precum:
+Analyzer-ul extrage:
 
 - numar functii;
 - numar variabile;
@@ -314,7 +388,7 @@ Analyzer-ul extrage informatii precum:
 - diagnostice `libclang`;
 - warning-uri si erori.
 
-Serverul ruleaza analyzer-ul folosind `fork()`, `exec()` si `pipe()`, apoi trimite rezultatul inapoi catre client.
+Serverul ruleaza analyzer-ul folosind `fork()`, `exec()` si `pipe()`.
 
 ---
 
@@ -339,65 +413,7 @@ user1:pass1:user
 admin:admin123:admin
 ```
 
-Clientul normal foloseste rolul `user`.
-
-Clientul admin foloseste rolul `admin` si are voie sa execute comenzile de administrare doar prin socket UNIX.
-
----
-
-## Protocol
-
-Fiecare conexiune incepe cu:
-
-```txt
-LOGIN <username> <password>
-```
-
-Exemplu:
-
-```txt
-LOGIN user1 pass1
-```
-
-Raspuns server:
-
-```txt
-RESULT <size>
-OK role=user
-```
-
-Pentru upload:
-
-```txt
-UPLOAD <filename> <size>
-<file_content>
-```
-
-Pentru download raport:
-
-```txt
-DOWNLOAD_REPORT <report_name>
-```
-
-Pentru raspuns text:
-
-```txt
-RESULT <size>
-<body>
-```
-
-Pentru raspuns fisier:
-
-```txt
-FILE <filename> <size>
-<file_content>
-```
-
-Protocolul complet este descris in:
-
-```txt
-docs/protocol.tex
-```
+Login-ul este trimis automat de clienti la inceputul fiecarei conexiuni.
 
 ---
 
@@ -415,34 +431,15 @@ Exemplu:
 [2026-06-12 12:17:08] sample.c QUEUED
 [2026-06-12 12:17:08] sample.c RUNNING
 [2026-06-12 12:17:09] sample.c DONE
-[2026-06-12 12:17:09] bad_type.c QUEUED
-[2026-06-12 12:17:09] bad_type.c RUNNING
-[2026-06-12 12:17:09] bad_type.c DONE
 ```
 
-Joburile pot fi vazute din admin client cu optiunea:
+Joburile pot fi vazute:
 
 ```txt
-9. Show analysis jobs
+admin_client -> Show analysis jobs
+REST API -> GET /jobs
+SOAP API -> Jobs
 ```
-
----
-
-## Loguri si statistici
-
-Logurile serverului sunt salvate in:
-
-```txt
-logs/server.log
-```
-
-Statisticile sunt salvate in:
-
-```txt
-logs/stats.txt
-```
-
-Adminul poate vedea aceste informatii direct din `admin_client`.
 
 ---
 
@@ -463,64 +460,41 @@ Terminal 2:
 Terminal 3:
 
 ```bash
-./client tests/sample.c
-./client tests/bad_type.c
-./client download sample_report.txt
+python3 rest_api/app.py
 ```
 
 Terminal 4:
 
 ```bash
+python3 soap_api/soap_server.py
+```
+
+Terminal 5:
+
+```bash
+./client tests/sample.c
+./client tests/bad_type.c
+./client download sample_report.txt
+```
+
+Terminal 6:
+
+```bash
+python3 python_client/client.py upload tests/good_math.c
+python3 python_client/client.py download good_math_report.txt
+```
+
+Terminal 7:
+
+```bash
 ./admin_client
 ```
 
-In admin client se pot testa:
-
-```txt
-1. Server stats
-4. List reports
-5. Server status
-8. List users
-9. Show analysis jobs
-```
-
----
-
-## Exemple de fisiere de test
-
-Fisiere bune:
-
-```txt
-tests/sample.c
-tests/good_math.c
-tests/good_nested.c
-tests/good_while.c
-```
-
-Fisiere cu probleme:
-
-```txt
-tests/bad.c
-tests/bad_syntax.c
-tests/bad_type.c
-tests/bad_uninitialized.c
-```
-
----
-
-## Curatare
-
-Curatare executabile si `uploads/`:
+Terminal 8:
 
 ```bash
-make clean
-```
-
-Curatare manuala completa:
-
-```bash
-rm -rf uploads reports logs downloads downloads_py
-rm -f /tmp/t17_admin.sock
+./scripts/test_rest.sh
+./scripts/test_soap.sh
 ```
 
 ---
@@ -535,12 +509,10 @@ docs/protocol.tex
 README.tex
 ```
 
-Generare PDF:
+Specificatia REST este in:
 
-```bash
-pdflatex README.tex
-pdflatex -output-directory=docs docs/SRS_SDD.tex
-pdflatex -output-directory=docs docs/protocol.tex
+```txt
+docs/openapi.yaml
 ```
 
 README-ul principal pentru GitHub ramane:
@@ -556,8 +528,8 @@ README.md
 - socket INET TCP;
 - socket UNIX / local;
 - comunicare client-server;
-- client normal;
-- client admin;
+- client normal C;
+- client admin C;
 - client in alta limba, Python;
 - transfer fisiere client -> server;
 - transfer fisiere server -> client;
@@ -569,10 +541,16 @@ README.md
 - comunicare cu analyzer prin `pipe()`;
 - job tracking;
 - monitorizare cu `inotify`;
+- REST API minimal;
+- OpenAPI;
+- SOAP API minimal;
+- WSDL;
+- script de test REST;
+- script de test SOAP;
 - documentatie LaTeX.
 
 ---
 
 ## Concluzie
 
-Proiectul implementeaza o aplicatie distribuita locala pentru analiza semantica a codului sursa C. Sistemul foloseste mai multe concepte importante din programarea concurenta si distribuita: socket-uri INET, socket-uri UNIX, procese, pipe-uri, `select()`, autentificare, transfer de fisiere si monitorizare cu `inotify`.
+Proiectul implementeaza o aplicatie distribuita locala pentru analiza semantica a codului sursa C. Sistemul foloseste concepte importante din programarea concurenta si distribuita: socket-uri INET, socket-uri UNIX, procese, pipe-uri, `select()`, autentificare, transfer de fisiere, monitorizare cu `inotify`, REST API si SOAP API.
